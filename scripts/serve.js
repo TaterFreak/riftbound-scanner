@@ -2,8 +2,9 @@
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const PORT = Number(process.env.PORT ?? 8080)
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -15,15 +16,28 @@ const TYPES = {
   '.svg': 'image/svg+xml'
 }
 
-createServer(async (req, res) => {
-  const path = decodeURIComponent(new URL(req.url, 'http://x').pathname)
-  const rel = normalize(path === '/' ? '/index.html' : path).replace(/^([/\\])+/, '')
-  try {
-    const body = await readFile(join(ROOT, rel))
-    res.writeHead(200, { 'content-type': TYPES[extname(rel)] ?? 'application/octet-stream' })
-    res.end(body)
-  } catch {
-    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
-    res.end('Introuvable')
-  }
-}).listen(PORT, () => console.log(`http://localhost:${PORT}`))
+export function createStaticServer(root) {
+  return createServer(async (req, res) => {
+    try {
+      const path = decodeURIComponent(new URL(req.url, 'http://x').pathname)
+      const rel = normalize(path === '/' ? '/index.html' : path).replace(/^([/\\])+/, '')
+      const body = await readFile(join(root, rel))
+      res.writeHead(200, { 'content-type': TYPES[extname(rel)] ?? 'application/octet-stream' })
+      res.end(body)
+    } catch (err) {
+      if (err.code === 'ERR_INVALID_URL' || err instanceof URIError) {
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('Requête invalide')
+      } else {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('Introuvable')
+      }
+    }
+  })
+}
+
+// Démarrage automatique quand le fichier est lancé directement
+const thisFile = fileURLToPath(import.meta.url)
+if (process.argv[1] === thisFile) {
+  createStaticServer(ROOT).listen(PORT, () => console.log(`http://localhost:${PORT}`))
+}
