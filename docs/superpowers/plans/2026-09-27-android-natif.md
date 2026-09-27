@@ -1758,8 +1758,17 @@ Expected: PASS. Compare le nombre de cas couverts avec la suite JavaScript : cha
 
 ```bash
 git rm -r index.html styles.css sw.js manifest.webmanifest icon-192.png icon-512.png \
-  src/ scripts/serve.js scripts/make-icons.js .github/workflows/pages.yml test/
+  src/ scripts/serve.js scripts/make-icons.js .github/workflows/pages.yml
+git rm test/serve.test.js test/smoke.test.js test/viewfinder.test.js test/store.test.js \
+  test/collector-code.test.js test/match.test.js test/variant.test.js \
+  test/entries.test.js test/csv.test.js test/scan-machine.test.js test/language.test.js
 ```
+
+**Ne supprime pas tout le dossier `test/`.** Il contient aussi
+`test/catalog-normalize.test.js`, `test/catalog-update.test.js` et
+`test/fixtures/catalog-sample.json`, qui couvrent le script de récupération du
+catalogue — lequel reste en JavaScript. Les retirer laisserait `catalog/` sans
+aucun test.
 
 Le dossier `catalog/` et ses tests restent : le script de récupération du catalogue tourne sur le poste de développement et n'a aucune raison d'être réécrit en Kotlin. Adapte `package.json` pour ne garder que `catalog:update` et `test`, et ajuste `node --test` au périmètre restant.
 
