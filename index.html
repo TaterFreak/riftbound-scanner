@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Riftbound Scanner</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="barre">
+      <button id="onglet-scan" class="onglet actif" type="button">Scanner</button>
+      <button id="onglet-liste" class="onglet" type="button">Collection <span id="compteur">0</span></button>
+    </header>
+
+    <main>
+      <section id="vue-scan" class="vue">
+        <div class="reglages">
+          <button id="reglage-finition" type="button" aria-pressed="false">Normale</button>
+          <button id="reglage-langue" type="button">EN</button>
+          <button id="detecter-langue" type="button">Détecter la langue</button>
+          <span id="etat-scan" role="status" aria-live="polite"></span>
+        </div>
+        <div class="camera">
+          <video id="flux" playsinline muted></video>
+          <div id="viseur" class="viseur"></div>
+        </div>
+        <canvas id="tampon" hidden></canvas>
+        <form id="saisie-manuelle">
+          <label for="code-manuel">Saisir un code</label>
+          <input id="code-manuel" name="code" placeholder="UNL-121-219" autocomplete="off" />
+          <button type="submit">Ajouter</button>
+        </form>
+        <div id="dialogue" class="dialogue" hidden></div>
+      </section>
+
+      <section id="vue-liste" class="vue" hidden></section>
+    </main>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

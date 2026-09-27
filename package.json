@@ -1,0 +1,15 @@
+{
+  "name": "riftbound-scanner",
+  "version": "0.1.0",
+  "description": "Scanner de cartes Riftbound au téléphone, avec export CSV.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "dev": "node scripts/serve.js",
+    "catalog:update": "node catalog/update.js"
+  },
+  "license": "MIT"
+}

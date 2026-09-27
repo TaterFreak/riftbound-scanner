@@ -56,7 +56,7 @@
 
 **Interfaces:**
 - Consumes: rien.
-- Produces: `npm test` exécute `node --test`. `npm run dev` sert la racine du dépôt sur le port 8080.
+- Produces: `npm test` exécute `node --test`. `createStaticServer(root)` est exporté par `scripts/serve.js`, qui démarre le serveur sur le port 8080 quand il est lancé directement.
 
 - [ ] **Step 1: Écrire le test de fumée**
 
@@ -122,13 +122,21 @@ node_modules/
 
 - [ ] **Step 5: Écrire `scripts/serve.js`**
 
+Le serveur est exporté sous forme de fabrique pour être testable, et ne démarre
+de lui-même que lorsque le fichier est lancé directement. Deux pièges à ne pas
+réintroduire : `new URL('..', import.meta.url).pathname` renvoie `/C:/…` sous
+Windows et casse tout résolution de chemin — il faut `fileURLToPath` ; et le
+décodage de l'URL doit se faire **dans** le `try`, sinon une requête `GET /%` lève
+une `URIError` non capturée qui termine le process.
+
 ```js
 // Serveur statique minimal pour le développement. Aucune dépendance.
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const PORT = Number(process.env.PORT ?? 8080)
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -140,18 +148,31 @@ const TYPES = {
   '.svg': 'image/svg+xml'
 }
 
-createServer(async (req, res) => {
-  const path = decodeURIComponent(new URL(req.url, 'http://x').pathname)
-  const rel = normalize(path === '/' ? '/index.html' : path).replace(/^([/\\])+/, '')
-  try {
-    const body = await readFile(join(ROOT, rel))
-    res.writeHead(200, { 'content-type': TYPES[extname(rel)] ?? 'application/octet-stream' })
-    res.end(body)
-  } catch {
-    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
-    res.end('Introuvable')
-  }
-}).listen(PORT, () => console.log(`http://localhost:${PORT}`))
+export function createStaticServer(root) {
+  return createServer(async (req, res) => {
+    try {
+      const path = decodeURIComponent(new URL(req.url, 'http://x').pathname)
+      const rel = normalize(path === '/' ? '/index.html' : path).replace(/^([/\\])+/, '')
+      const body = await readFile(join(root, rel))
+      res.writeHead(200, { 'content-type': TYPES[extname(rel)] ?? 'application/octet-stream' })
+      res.end(body)
+    } catch (err) {
+      if (err.code === 'ERR_INVALID_URL' || err instanceof URIError) {
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('Requête invalide')
+      } else {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('Introuvable')
+      }
+    }
+  })
+}
+
+// Démarrage automatique quand le fichier est lancé directement
+const thisFile = fileURLToPath(import.meta.url)
+if (process.argv[1] === thisFile) {
+  createStaticServer(ROOT).listen(PORT, () => console.log(`http://localhost:${PORT}`))
+}
 ```
 
 - [ ] **Step 6: Écrire `README.md`**
@@ -177,15 +198,31 @@ sécurisé, la caméra est autorisée.
 En production, le site est servi en HTTPS par GitHub Pages.
 ```
 
-- [ ] **Step 7: Lancer les tests**
+- [ ] **Step 7: Écrire `test/serve.test.js`**
+
+Le serveur est la seule logique de cette tâche : il lui faut de vrais tests, avec
+`node:test` seul et aucune dépendance. Démarrer sur le port `0` et lire le port réel
+via `server.address().port`, puis vérifier qu'un fichier existant renvoie 200 avec le
+bon type MIME, qu'un fichier absent renvoie 404, que `GET /%` renvoie 400 **sans tuer
+le process**, et qu'une tentative de traversée ne sort pas de la racine. Fermer le
+serveur en fin de chaque test.
+
+- [ ] **Step 8: Lancer les tests**
 
 Run: `node --test`
-Expected: PASS, 2 tests.
+Expected: PASS, 6 tests.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Vérifier le serveur à la main**
+
+Run: `npm run dev`, puis `curl -i http://localhost:8080/package.json` depuis un autre
+terminal.
+Expected: 200 avec `content-type: application/json; charset=utf-8`. Un 404 ici
+signifie que `ROOT` est mal construit.
+
+- [ ] **Step 10: Commit**
 
 ```bash
-git add package.json .gitignore README.md scripts/serve.js test/smoke.test.js
+git add package.json .gitignore README.md scripts/serve.js test/smoke.test.js test/serve.test.js
 git commit -m "chore: squelette du depot et serveur de developpement"
 ```
 
