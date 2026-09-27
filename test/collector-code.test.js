@@ -9,6 +9,12 @@ test('canonicalCode minuscule et retire les zéros de tête du numéro', () => {
   assert.equal(canonicalCode('unl-121-219'), 'unl-121-219')
 })
 
+test('canonicalCode rejette les non-strings', () => {
+  assert.equal(canonicalCode(null), null)
+  assert.equal(canonicalCode(undefined), null)
+  assert.equal(canonicalCode({}), null)
+})
+
 test('lit un code propre', () => {
   assert.equal(parseCollectorCode('UNL-121-219'), 'unl-121-219')
 })
@@ -53,6 +59,20 @@ test('rejette ce qui n est pas un code', () => {
   for (const raw of ['', '   ', 'Bewitching Spirit', '219', 'Illustration : Wild Blue Studios']) {
     assert.equal(parseCollectorCode(raw), null, raw)
   }
+})
+
+test('rejette les correspondances parasites et retourne le vrai code', () => {
+  // Les patterns -2/-2 ou -1/-1 sont courants sur une carte (mécanique de jeu),
+  // mais ne sont pas des codes de collection. Le vrai code se trouve après.
+  assert.equal(parseCollectorCode('Deal -2/-2 to a unit. UNL-121-219'), 'unl-121-219')
+  assert.equal(parseCollectorCode('Give -1/-1 until end of turn. UNL-121-219'), 'unl-121-219')
+  assert.equal(parseCollectorCode('ab-12 UNL-121-219'), 'unl-121-219')
+  assert.equal(parseCollectorCode('v1-1 UNL-121-219'), 'unl-121-219')
+})
+
+test('rejette un texte qui ne contient aucun vrai code', () => {
+  // Sans un code valide après, retourner null
+  assert.equal(parseCollectorCode('Deal -2/-2 to a unit.'), null)
 })
 
 test('les préfixes connus couvrent tous les codes du catalogue réel', async () => {
