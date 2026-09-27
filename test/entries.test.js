@@ -88,3 +88,25 @@ test('removeEntry retire la ligne visée', () => {
   const before = addScan([], scan).entries
   assert.deepEqual(removeEntry(before, 0), [])
 })
+
+test('addScan copie le tableau domain sans le partager avec le catalogue', () => {
+  const { entries } = addScan([], scan)
+  entries[0].domain.push('CORROMPU')
+  assert.deepEqual(card.domain, ['Chaos'], 'muter une ligne ne doit pas corrompre le catalogue')
+})
+
+test('une carte normale et sa version Metal, memes code et finition, restent deux lignes distinctes', () => {
+  const metalCard = { ...card, riftcodexId: 'abc-metal', tcgplayerId: '685593', name: 'Bewitching Spirit (Metal)' }
+  const first = addScan([], scan).entries
+  const { entries, outcome } = addScan(first, { ...scan, card: metalCard })
+  assert.equal(outcome.type, 'added', 'la version Metal ne doit pas etre prise pour un doublon de la normale')
+  assert.equal(entries.length, 2)
+  assert.equal(entries[1].variant, 'Metal')
+})
+
+test('deux exemplaires strictement identiques fusionnent toujours en doublon', () => {
+  const sameCard = { ...card }
+  const first = addScan([], scan).entries
+  const { outcome } = addScan(first, { ...scan, card: sameCard })
+  assert.deepEqual(outcome, { type: 'duplicate', index: 0 })
+})

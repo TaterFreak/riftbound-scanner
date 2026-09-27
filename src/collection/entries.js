@@ -1,9 +1,15 @@
 // Construction et mise à jour des lignes de collection. Module pur et immuable.
 import { variantOf } from '../recognize/variant.js'
 
-/** Deux exemplaires ne fusionnent que s'ils sont vendables sous la même annonce. */
+/**
+ * Deux exemplaires ne fusionnent que s'ils sont vendables sous la même annonce.
+ * L'identité repose sur `riftcodexId`, pas sur `code` : plusieurs cartes physiquement
+ * différentes (normale / Metal...) peuvent partager le même code imprimé. Une carte
+ * inconnue n'a pas de riftcodexId : on retombe alors sur son code brut.
+ */
 export function entryKey(entry) {
-  return [entry.code, entry.finish, entry.language, entry.condition].join('|')
+  const identity = entry.riftcodexId ?? entry.code
+  return [identity, entry.finish, entry.language, entry.condition].join('|')
 }
 
 function entryFromScan({ card, rawCode, finish, language, condition, scannedAt }) {
@@ -38,7 +44,7 @@ function entryFromScan({ card, rawCode, finish, language, condition, scannedAt }
     number: card.number,
     rarity: card.rarity,
     type: card.type,
-    domain: card.domain,
+    domain: [...card.domain],
     riftcodexId: card.riftcodexId,
     tcgplayerId: card.tcgplayerId,
     variant: variantOf(card.name),
