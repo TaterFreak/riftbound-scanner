@@ -31,14 +31,29 @@ function editDistance(a, b) {
   return previous[b.length]
 }
 
+/** Extrait le numéro de collection du code canonique (dernier segment). */
+function extractCollectorNumber(key) {
+  const parts = key.split('-')
+  return parseInt(parts[parts.length - 1], 10) || 0
+}
+
 /** Les cartes dont le code est le plus proche, pour l'écran de lecture douteuse. */
-export function candidatesFor(code, index, limit = 3) {
+export function candidatesFor(code, index, limit = 5) {
   const target = canonicalCode(code)
+  const targetNumber = extractCollectorNumber(target)
   const scored = []
   for (const key of index.keys()) {
     const distance = editDistance(target, key)
-    if (distance > 0 && distance <= 2) scored.push({ key, distance })
+    if (distance > 0 && distance <= 2) {
+      const keyNumber = extractCollectorNumber(key)
+      const numericDistance = Math.abs(keyNumber - targetNumber)
+      scored.push({ key, distance, numericDistance })
+    }
   }
-  scored.sort((a, b) => a.distance - b.distance || a.key.localeCompare(b.key))
+  scored.sort((a, b) =>
+    a.distance - b.distance ||
+    a.numericDistance - b.numericDistance ||
+    a.key.localeCompare(b.key)
+  )
   return scored.slice(0, limit).flatMap(({ key }) => index.get(key))
 }
