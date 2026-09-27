@@ -21,7 +21,8 @@ d'une spec séparée.
 | Identification | OCR du numéro de collection imprimé en bas de carte | Identifie la version exacte, contrairement au nom qui est ambigu entre sets |
 | Flux de scan | Hybride : ajout automatique si lecture nette et carte inédite, écran de confirmation sinon | Rapide sur le cas courant, sûr sur les cas limites |
 | Catalogue | Snapshot JSON figé au build depuis l'API Riftcodex | Fonctionne hors-ligne, aucun rate-limit pendant un scan |
-| Foil | Réglage de session collant, plus liste d'exceptions maintenue à la main | L'utilisateur scanne ses foils par paquets ; ni l'OCR ni le catalogue ne distinguent un foil |
+| Clé d'identification | `riftbound_id` (ex. `unl-116a-219`), qui est le code imprimé | Contient le suffixe de variante ; le seul `collector_number` confondrait 116 et 116a |
+| Finition | Réglage de session collant « Normale / Metal », qui arbitre les codes ambigus | La finition Metal se lit dans le nom de la carte au catalogue, pas besoin de liste manuelle |
 | Langue | Détection best-effort par mots-outils, adossée à un réglage de session | Aucune base publique ne fournit les noms traduits |
 | État | Défaut NM, modifiable ligne par ligne après coup | Non déterminable visuellement ; ne doit pas ralentir le scan |
 | Build | ESM natif, aucun bundler, `node --test` | Aligné sur les conventions du dépôt `news` |
@@ -32,19 +33,42 @@ Quatre unités, séparant strictement la logique pure des entrées-sorties.
 
 ### `catalog/` — acquisition du catalogue (Node, hors runtime)
 
-Script exécuté à la demande via `npm run catalog:update`. Il parcourt les pages de
-l'API publique Riftcodex (`https://api.riftcodex.com/cards`, sans authentification)
+Script exécuté à la demande via `npm run catalog:update`. Il parcourt l'API publique
+Riftcodex (`https://api.riftcodex.com/cards?page=N&size=100`, sans authentification)
 et écrit `data/cards.json`.
 
-Champs conservés par carte : `id`, `name`, `collector_number`, `set`, `rarity`,
-`type`, `domain`, `tcgplayer_id`.
+Forme réelle de l'API, vérifiée le 2026-09-27 : réponse
+`{ items, total, page, size, pages }`, `size` plafonné à 100, **1451 cartes sur 15
+pages**, 8 sets (`OGN`, `SFD`, `UNL`, `VEN`, `OPP`, `OGS`, `PR`, `JDG`).
 
-**Limite assumée** : Riftcodex ne publie aucune information de finition. Le catalogue
-ne peut donc pas dire qu'une carte n'existe qu'en foil. Cette connaissance vit dans
-`data/foil-only.json`, un fichier d'exceptions maintenu à la main, vide au départ, qui
-liste des raretés entières ou des cartes individuelles par `set` + `number`. Le script
-de mise à jour ne le touche jamais. Tant qu'il est vide, le réglage de session fait
-foi pour toutes les cartes.
+Champs conservés par carte : `riftbound_id`, `id`, `name`, `collector_number`,
+`set.set_id`, `classification` (type, rarity, domain), `tcgplayer_id`.
+
+**`riftbound_id` est le code imprimé.** Il vaut `unl-121-219`, `unl-116a-219`,
+`unl-229*-219` — soit set, numéro, suffixe de variante optionnel (`a` = alternate art,
+`*` = signature), et taille du set. C'est la clé de rapprochement. Des formes
+irrégulières existent (`sfd-t03` pour les jetons, `ven-r06`, `ven-sp4-006`) : le
+rapprochement se fait par appartenance à l'ensemble des ids du catalogue, jamais par
+validation d'une forme rigide.
+
+#### Deux natures de collisions, traitées différemment
+
+Vérifié sur les 1451 cartes : 147 codes apparaissent deux fois. Ils se répartissent
+en deux cas nets, qui appellent deux traitements opposés.
+
+**95 doublons de données.** Deux lignes de même code *et de même nom*. Sur ces 95
+groupes, sans exception, exactement une ligne porte un `tcgplayer_id` et exactement
+une porte `new: true` — la seconde est une fiche d'ingestion incomplète. Le script
+écarte celle qui n'a pas de `tcgplayer_id`. Le catalogue tombe à **1356 cartes**.
+
+**52 variantes réelles.** Deux cartes physiquement différentes partageant le code
+imprimé, distinguées par le suffixe du nom : 16 `(Metal)`, 15 `(Alternate Art)`,
+12 `(Overnumbered)`, et 9 paires de noms sans rapport. Le script les conserve toutes.
+
+Conséquence directe sur l'application : **un code scanné peut légitimement désigner
+deux cartes**. L'écran de désambiguïsation n'est donc pas un filet de sécurité
+optionnel, c'est un chemin nominal. Le réglage de session « Normale / Metal » tranche
+automatiquement les 16 groupes Metal ; les 36 autres posent la question.
 
 Le snapshot est commité dans le dépôt. L'application ne contacte jamais d'API à
 l'exécution.
@@ -56,14 +80,20 @@ erreur sans toucher au fichier.
 
 ### `src/recognize/` — logique de reconnaissance (pure, sans I/O)
 
-- `parseCollectorCode(rawOcrText) -> { set, number } | null`
-  Normalise le bruit d'OCR : confusions `0`/`O` et `1`/`I`/`l`, espaces parasites,
-  suffixe `/219` du total de set, casse mixte. Rejette ce qui ne ressemble pas à un
-  code plutôt que de deviner.
-- `matchCard(code, catalog) -> card | null`
-  Rapprochement exact sur `set` + `number`.
+- `parseCollectorCode(rawOcrText) -> string | null`
+  Produit un `riftbound_id` normalisé en minuscules, ou `null`. Encaisse le bruit
+  d'OCR : confusions `0`/`O` et `1`/`I`/`l`, séparateurs variables (`-`, `/`, `·`,
+  espaces), casse mixte, zéros de tête (`unl-029a-219`). Rejette plutôt que deviner.
+- `matchCards(code, catalog) -> card[]`
+  Rapprochement par appartenance à l'index des ids. Retourne **zéro, une ou
+  plusieurs** cartes — plusieurs étant un cas nominal pour les 52 codes partagés.
+- `resolveVariant(cards, { finish }) -> { card } | { ambiguous: card[] }`
+  Applique le réglage de finition de session : en mode Metal, choisit l'entrée dont
+  le nom se termine par `(Metal)` ; en mode Normale, écarte les `(Metal)`. Si une
+  seule carte subsiste, elle est retenue ; sinon la liste part à l'écran de choix.
 - `candidatesFor(rawOcrText, catalog) -> card[]`
-  Les trois cartes les plus proches, pour l'écran de lecture douteuse.
+  Les trois ids les plus proches en distance d'édition, pour l'écran de lecture
+  douteuse.
 - `detectLanguage(rawOcrText) -> 'fr' | 'en' | null`
   Classification par mots-outils. Retourne `null` plutôt que de trancher à
   l'aveugle quand le texte est trop court.
@@ -100,7 +130,10 @@ viseur ouvert en continu
        └─ oui  → code trouvé dans le catalogue ?
             ├─ non  → ligne « inconnue » conservée avec le code brut,
             │         suggestion de mettre à jour le catalogue
-            └─ oui  → cette carte est-elle déjà dans la collection ?
+            ├─ plusieurs cartes, non tranchées par la finition de session
+            │        → écran de choix de variante (Metal / Alternate Art /
+            │          Overnumbered / homonyme), avec les illustrations
+            └─ une seule carte → est-elle déjà dans la collection ?
                  ├─ non  → ajout, bip, le viseur continue
                  └─ oui  → figer : « Déjà scannée ×N — ajouter un exemplaire ? »
 ```
@@ -109,8 +142,9 @@ Lecture ambiguë (code partiel, plusieurs correspondances) : affichage des trois
 candidats les plus proches, choix au doigt.
 
 Deux réglages collants en haut de l'écran s'appliquent à tous les scans suivants
-jusqu'à changement : **Foil / Non-foil** et **Langue**. Une carte listée dans
-`foil-only.json` est marquée foil quel que soit le réglage.
+jusqu'à changement : **Normale / Metal** et **Langue**. Le réglage de finition ne
+sert pas qu'à étiqueter la ligne : il tranche automatiquement les 16 codes partagés
+entre une carte et sa version Metal.
 
 La saisie manuelle du code au clavier reste accessible en permanence, et sert aussi
 de repli si la caméra est indisponible.
@@ -122,9 +156,11 @@ Une entrée de collection :
 | Champ | Origine |
 |---|---|
 | `name`, `set`, `collector_number`, `rarity`, `type`, `domain` | catalogue |
+| `riftbound_id` | catalogue — le code imprimé, clé de rapprochement |
 | `riftcodex_id`, `tcgplayer_id` | catalogue |
 | `quantity` | déduplication au scan |
-| `foil` | réglage de session, forcé si listée dans `foil-only.json` |
+| `finish` | réglage de session, confirmé par le suffixe du nom au catalogue |
+| `variant` | suffixe du nom : `Alternate Art`, `Overnumbered`, `Signature`, `Metal`, ou vide |
 | `language` | détection, à défaut réglage de session |
 | `condition` | `NM` par défaut, éditable |
 | `scanned_at` | horodatage |
@@ -152,6 +188,7 @@ Règle directrice : **ne jamais perdre un scan**.
 | Situation | Comportement |
 |---|---|
 | Code absent du catalogue | Ligne « inconnue » conservée avec `raw_code`, exportée dans le CSV, suggestion de mise à jour du catalogue |
+| Code partagé par deux variantes | Écran de choix ; jamais d'ajout silencieux d'une variante devinée |
 | Caméra refusée ou page servie en HTTP | Message explicite, bascule sur la saisie manuelle |
 | OCR illisible | Aucun retour, aucun bruit |
 | Mise à jour du catalogue anormale | Snapshot existant préservé, rapport écrit, sortie en erreur |
@@ -160,9 +197,14 @@ Règle directrice : **ne jamais perdre un scan**.
 ## Tests
 
 **Unitaires** (`node --test`, sans navigateur) : `parseCollectorCode` sur des chaînes
-OCR réalistes et bruitées, `matchCard`, `candidatesFor`, `detectLanguage`, la
-déduplication et le calcul de quantité, la génération du CSV incluant l'échappement
-et le BOM, et la garde de santé du script de catalogue.
+OCR réalistes et bruitées, `matchCards`, `resolveVariant`, `candidatesFor`,
+`detectLanguage`, la déduplication et le calcul de quantité, la génération du CSV
+incluant l'échappement et le BOM, la règle d'élimination des 95 doublons de données
+et la garde de santé du script de catalogue.
+
+Le dépôt embarque un extrait figé du catalogue réel comme fixture, incluant les cas
+tordus rencontrés : un doublon de données, un couple Metal, un couple Alternate Art,
+et un id irrégulier de jeton.
 
 **Fonctionnels** : un faux moteur OCR rejoue une séquence de textes de trames et le
 flux complet est vérifié — confirmation sur deux trames, ajout automatique, écran de
@@ -197,3 +239,8 @@ d'illustration, publication sur Cardmarket.
 3. **Dépendance à Riftcodex** — API communautaire sans garantie de pérennité. Le
    snapshot commité protège l'usage quotidien ; l'acquisition est isolée dans un
    seul fichier, remplaçable par une autre source sans toucher au reste.
+4. **Qualité des données amont** — les 95 doublons prouvent que l'ingestion Riftcodex
+   n'est pas parfaite. La règle d'élimination est vérifiée sur 95 groupes sur 95 à ce
+   jour, mais elle repose sur une régularité observée, pas garantie. Le script
+   signale tout groupe de doublons que la règle n'explique pas, au lieu de choisir
+   au hasard.
