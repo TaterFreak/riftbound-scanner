@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { viewfinderSource } from '../src/scan/viewfinder.js'
+import { viewfinderSource, widenBand } from '../src/scan/viewfinder.js'
 
 // Bande utilisée par l'app : voir BAND dans src/ui/scan-view.js et .viseur dans styles.css.
 const BAND = { top: 0.78, height: 0.1, left: 0.04, right: 0.04 }
@@ -99,4 +99,52 @@ test('dimensions de flux nulles ou absentes : renvoie null', () => {
   assert.equal(viewfinderSource({ videoWidth: 1080, videoHeight: 0, ...boite }), null)
   assert.equal(viewfinderSource({ videoWidth: 1080, videoHeight: 1440, boxWidth: 0, boxHeight: 400, band: BAND }), null)
   assert.equal(viewfinderSource({ videoWidth: 1080, videoHeight: 1440, boxWidth: 300, boxHeight: 0, band: BAND }), null)
+})
+
+// widenBand : élargit la bande verticale autour de son centre, pour absorber l'écart de
+// champ de vision entre l'aperçu vidéo et une photo plein capteur (voir grabViewfinder
+// dans src/scan/camera.js). Les nombres ci-dessous sont des fractions binaires exactes
+// (huitièmes, seizièmes, trente-deuxièmes) pour que les calculs à la main tombent juste
+// en flottant, sans arrondi caché.
+
+test('widenBand : élargissement normal, centre préservé, marges inchangées', () => {
+  // top=0.25, height=0.25 -> centre = 0.375. Facteur 2 -> nouvelle hauteur 0.5,
+  // nouveau top = 0.375 - 0.25 = 0.125. Tient dans [0, 1] : aucun bornage.
+  const band = { top: 0.25, height: 0.25, left: 0.1, right: 0.1 }
+  const result = widenBand(band, 2)
+  assert.deepEqual(result, { top: 0.125, height: 0.5, left: 0.1, right: 0.1 })
+})
+
+test('widenBand : bande proche du bord haut, bornée à 0', () => {
+  // top=0.03125, height=0.125 -> centre = 0.09375. Facteur 2 -> nouvelle hauteur 0.25,
+  // top brut = 0.09375 - 0.125 = -0.03125 < 0 : bornage au bord haut.
+  const band = { top: 0.03125, height: 0.125, left: 0, right: 0 }
+  const result = widenBand(band, 2)
+  assert.deepEqual(result, { top: 0, height: 0.25, left: 0, right: 0 })
+})
+
+test('widenBand : bande proche du bord bas, bornée à 1', () => {
+  // top=0.875, height=0.125 (bande déjà collée au bord bas). centre = 0.9375.
+  // Facteur 2 -> nouvelle hauteur 0.25, top brut = 0.9375 - 0.125 = 0.8125.
+  // Borne haute = 1 - 0.25 = 0.75 < 0.8125 : bornage au bord bas.
+  const band = { top: 0.875, height: 0.125, left: 0, right: 0 }
+  const result = widenBand(band, 2)
+  assert.deepEqual(result, { top: 0.75, height: 0.25, left: 0, right: 0 })
+})
+
+test('widenBand : facteur 1 ne change rien', () => {
+  const band = { top: 0.3125, height: 0.125, left: 0.0625, right: 0.09375 }
+  const result = widenBand(band, 1)
+  assert.deepEqual(result, band)
+})
+
+test('widenBand : le centre est préservé quand il n\'y a pas de bornage', () => {
+  // top=0.25, height=0.5 -> centre = 0.5. Facteur 1.5 -> nouvelle hauteur 0.75,
+  // top brut = 0.5 - 0.375 = 0.125, dans [0, 0.25] : aucun bornage.
+  const band = { top: 0.25, height: 0.5, left: 0.1, right: 0.2 }
+  const result = widenBand(band, 1.5)
+  assert.deepEqual(result, { top: 0.125, height: 0.75, left: 0.1, right: 0.2 })
+  const centreOriginal = band.top + band.height / 2
+  const centreElargi = result.top + result.height / 2
+  assert.equal(centreElargi, centreOriginal)
 })

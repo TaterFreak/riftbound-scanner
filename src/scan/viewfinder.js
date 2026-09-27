@@ -59,3 +59,27 @@ export function viewfinderSource({ videoWidth, videoHeight, boxWidth, boxHeight,
 
   return { sx, sy, sWidth, sHeight }
 }
+
+/**
+ * Élargit une bande verticale autour de son centre, en bornant le résultat à
+ * l'intervalle [0, 1] pour ne jamais sortir de l'image.
+ *
+ * Sert à absorber l'écart de champ de vision entre l'aperçu vidéo et une photo pleine
+ * résolution (`takePhoto()`) : beaucoup de téléphones filment en 16:9 recadré et
+ * photographient en 4:3 plein capteur, si bien que la bande visible à l'écran ne tombe
+ * pas forcément au même endroit dans la photo. Élargir plutôt que déplacer reste correct
+ * quel que soit le sens de l'écart. Voir grabViewfinder dans src/scan/camera.js.
+ *
+ * `factor` ne porte que sur la hauteur : `left`/`right` (les marges latérales) sont
+ * conservés tels quels.
+ *
+ * @param {{top:number, height:number, left:number, right:number}} band
+ * @param {number} factor
+ * @returns {{top:number, height:number, left:number, right:number}}
+ */
+export function widenBand(band, factor) {
+  const center = band.top + band.height / 2
+  const height = clamp(band.height * factor, 0, 1)
+  const top = clamp(center - height / 2, 0, 1 - height)
+  return { ...band, top, height }
+}
