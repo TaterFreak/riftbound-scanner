@@ -23,8 +23,14 @@ const COLUMNS = [
   ['scanned_at', (e) => e.scannedAt]
 ]
 
+// Neutralise l'injection de formule : un tableur interprète une cellule commençant
+// par =, +, - ou @ comme une formule (le raw_code d'une carte inconnue vient de l'OCR,
+// donc non maîtrisé). Une apostrophe en tête force une lecture en texte, sans autre effet.
+const FORMULA_LEAD = /^[=+\-@]/
+
 const escape = (value) => {
-  const text = String(value ?? '')
+  const raw = String(value ?? '')
+  const text = FORMULA_LEAD.test(raw) ? `'${raw}` : raw
   return /[";\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 

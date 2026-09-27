@@ -74,3 +74,16 @@ test('exporte une carte inconnue avec son code brut', () => {
 test('utilise des fins de ligne CRLF', () => {
   assert.ok(toCsv([entry]).includes('\r\n'))
 })
+
+test('neutralise une valeur commençant par un signe de formule', () => {
+  const tricky = { ...entry, name: '=SUM(A1:A9)' }
+  const header = lines(toCsv([tricky]))[0].split(';')
+  const row = lines(toCsv([tricky]))[1].split(';')
+  assert.equal(row[header.indexOf('name')], "'=SUM(A1:A9)")
+})
+
+test('laisse une valeur légitime inchangée', () => {
+  const header = lines(toCsv([entry]))[0].split(';')
+  const row = lines(toCsv([entry]))[1].split(';')
+  assert.equal(row[header.indexOf('name')], 'Bewitching Spirit')
+})
