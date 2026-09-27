@@ -4,7 +4,7 @@
 const DB_NAME = 'riftbound-scanner'
 const DB_VERSION = 1
 const STORE = 'state'
-const DEFAULT_SETTINGS = { finish: 'normal', language: 'en', condition: 'NM' }
+const DEFAULT_SETTINGS = { finish: 'normal', language: 'en', condition: 'NM', diagnostic: false }
 
 const promisify = (request) =>
   new Promise((resolve, reject) => {

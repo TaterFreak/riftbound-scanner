@@ -62,7 +62,11 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .camera video { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* Aligné sur BAND dans src/ui/scan-view.js. Modifier les deux ensemble. */
+/*
+ * Aligné sur BAND dans src/ui/scan-view.js. Modifier les deux ensemble : ce sont les
+ * mêmes fractions (top/height/left/right) de la boîte affichée `.camera`, converties
+ * vers le repère du flux par viewfinderSource (src/scan/viewfinder.js).
+ */
 .viseur {
   position: absolute;
   left: 4%;
@@ -73,6 +77,19 @@ button:disabled { opacity: 0.5; cursor: default; }
   border-radius: 6px;
   pointer-events: none;
 }
+
+.diagnostic {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  opacity: 0.75;
+  border-top: 1px solid var(--bord);
+}
+
+#reglage-diagnostic { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
 
 #saisie-manuelle { display: flex; gap: 8px; padding: 8px; align-items: center; }
 #saisie-manuelle label { font-size: 14px; opacity: 0.8; }

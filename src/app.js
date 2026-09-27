@@ -6,7 +6,10 @@ import { createScanView } from './ui/scan-view.js'
 import { createListView } from './ui/list-view.js'
 
 const store = createStore({ indexedDB: globalThis.indexedDB ?? null })
-const etat = { entries: [], settings: { finish: 'normal', language: 'en', condition: 'NM' } }
+const etat = {
+  entries: [],
+  settings: { finish: 'normal', language: 'en', condition: 'NM', diagnostic: false }
+}
 
 const getState = () => etat
 const abonnes = []

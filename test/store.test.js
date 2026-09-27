@@ -57,17 +57,19 @@ test('loadSettings renvoie les réglages par défaut', async () => {
   assert.deepEqual(await store.loadSettings(), {
     finish: 'normal',
     language: 'en',
-    condition: 'NM'
+    condition: 'NM',
+    diagnostic: false
   })
 })
 
 test('saveSettings puis loadSettings restituent les réglages', async () => {
   const store = createStore({ indexedDB: fakeIndexedDB() })
-  await store.saveSettings({ finish: 'metal', language: 'fr', condition: 'EX' })
+  await store.saveSettings({ finish: 'metal', language: 'fr', condition: 'EX', diagnostic: true })
   assert.deepEqual(await store.loadSettings(), {
     finish: 'metal',
     language: 'fr',
-    condition: 'EX'
+    condition: 'EX',
+    diagnostic: true
   })
 })
 

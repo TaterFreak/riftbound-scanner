@@ -5,10 +5,19 @@ import { addScan, incrementEntry } from '../collection/entries.js'
 import { parseCollectorCode } from '../recognize/collector-code.js'
 import { detectLanguage } from '../recognize/language.js'
 
-// Aligné sur .viseur dans styles.css (top: 78%, height: 10%). Modifier les deux ensemble :
-// si l'un dérive, l'utilisateur vise une zone qui n'est pas celle analysée par l'OCR.
-const BAND = { top: 0.78, height: 0.1 } // bande basse, là où le code est imprimé
+// Aligné sur .viseur dans styles.css (top: 78%, height: 10%, left/right: 4%). Modifier
+// les deux ensemble : si l'un dérive, l'utilisateur vise une zone qui n'est pas celle
+// analysée par l'OCR. Ces fractions sont celles de la boîte *affichée* (`.camera`), pas
+// du flux vidéo intrinsèque : `grabViewfinder` (src/scan/camera.js) passe par
+// `viewfinderSource` pour tenir compte du recadrage `object-fit: cover`.
+const BAND = { top: 0.78, height: 0.1, left: 0.04, right: 0.04 } // bande basse, là où le code est imprimé
 const INTERVAL = 400
+
+/** Tronque un texte de diagnostic pour qu'il tienne sur une ligne. */
+function truncate(text, max) {
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}…`
+}
 
 export function createScanView({ root, machine, getState, setState, onStatus }) {
   const video = root.querySelector('#flux')
@@ -16,6 +25,11 @@ export function createScanView({ root, machine, getState, setState, onStatus }) 
   const dialogue = root.querySelector('#dialogue')
   const boutonFinition = root.querySelector('#reglage-finition')
   const boutonLangue = root.querySelector('#reglage-langue')
+  const caseDiagnostic = root.querySelector('#case-diagnostic')
+  const panneauDiagnostic = root.querySelector('#diagnostic')
+  const diagnosticDimensions = root.querySelector('#diagnostic-dimensions')
+  const diagnosticTexte = root.querySelector('#diagnostic-texte')
+  const diagnosticCode = root.querySelector('#diagnostic-code')
 
   let camera = null
   let ocr = null
@@ -133,12 +147,28 @@ export function createScanView({ root, machine, getState, setState, onStatus }) 
     }
   }
 
+  /**
+   * Affiche, sous le viseur, ce que voient le flux et l'OCR. C'est l'outil de réglage :
+   * sans lui, impossible de savoir si le viseur cadre la bonne zone ou si l'OCR lit
+   * n'importe quoi.
+   */
+  function afficherDiagnostic(texte) {
+    if (panneauDiagnostic.hidden) return
+    const box = video.getBoundingClientRect()
+    diagnosticDimensions.textContent =
+      `flux ${video.videoWidth}×${video.videoHeight} — boîte ${Math.round(box.width)}×${Math.round(box.height)}`
+    diagnosticTexte.textContent = `OCR : « ${truncate(texte ?? '', 40)} »`
+    const code = parseCollectorCode(texte)
+    diagnosticCode.textContent = `code : ${code ?? '—'}`
+  }
+
   async function tick() {
     if (busy || !dialogue.hidden) return
     busy = true
     try {
       grabViewfinder(video, canvas, BAND)
       const texte = await ocr.read(canvas)
+      afficherDiagnostic(texte)
       const { entries, settings } = getState()
       handle(machine.onFrame(texte, { ...settings, entries }))
     } finally {
@@ -159,6 +189,13 @@ export function createScanView({ root, machine, getState, setState, onStatus }) 
     const language = settings.language === 'en' ? 'fr' : 'en'
     setState({ settings: { ...settings, language } })
     boutonLangue.textContent = language.toUpperCase()
+  })
+
+  caseDiagnostic.addEventListener('change', () => {
+    const { settings } = getState()
+    const diagnostic = caseDiagnostic.checked
+    setState({ settings: { ...settings, diagnostic } })
+    panneauDiagnostic.hidden = !diagnostic
   })
 
   // Détection de langue : une passe d'OCR à alphabet complet sur la carte entière.
@@ -197,6 +234,12 @@ export function createScanView({ root, machine, getState, setState, onStatus }) 
 
   return {
     async start() {
+      // Réglage collant : reflète l'état persisté avant même que la caméra ne démarre
+      // (ou échoue), pour rester utilisable en saisie manuelle seule.
+      const { settings } = getState()
+      caseDiagnostic.checked = settings.diagnostic
+      panneauDiagnostic.hidden = !settings.diagnostic
+
       try {
         camera = await startCamera(video)
       } catch (error) {

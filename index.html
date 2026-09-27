@@ -19,6 +19,10 @@
           <button id="reglage-finition" type="button" aria-pressed="false">Normale</button>
           <button id="reglage-langue" type="button">EN</button>
           <button id="detecter-langue" type="button">Détecter la langue</button>
+          <label id="reglage-diagnostic">
+            <input id="case-diagnostic" type="checkbox" />
+            Diagnostic
+          </label>
           <span id="etat-scan" role="status" aria-live="polite"></span>
         </div>
         <div class="camera">
@@ -26,6 +30,11 @@
           <div id="viseur" class="viseur"></div>
         </div>
         <canvas id="tampon" hidden></canvas>
+        <div id="diagnostic" class="diagnostic" hidden>
+          <span id="diagnostic-dimensions"></span>
+          <span id="diagnostic-texte"></span>
+          <span id="diagnostic-code"></span>
+        </div>
         <form id="saisie-manuelle">
           <label for="code-manuel">Saisir un code</label>
           <input id="code-manuel" name="code" placeholder="UNL-121-219" autocomplete="off" />
