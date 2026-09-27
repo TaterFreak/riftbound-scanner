@@ -7,12 +7,16 @@ plugins {
 
 android {
     namespace = "fr.riftbound.scanner"
-    compileSdk = 35
+    // Le brief fixait compileSdk = 35, mais AGP 9.4.1 refuse de
+    // compiler : plusieurs dependances (androidx.core, Compose,
+    // navigationevent...) exigent une API compilee >= 36 ou 37.
+    // On suit l erreur de compilation plutot que le brief.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "fr.riftbound.scanner"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 37
         versionCode = 1
         versionName = "0.1"
     }
