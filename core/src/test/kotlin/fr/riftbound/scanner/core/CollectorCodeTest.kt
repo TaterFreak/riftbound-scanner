@@ -22,4 +22,21 @@ class CollectorCodeTest {
     fun `canonicalCode rejette une entree nulle`() {
         assertNull(canonicalCode(null))
     }
+
+    @Test
+    fun `canonicalCode garde un suffixe de variante sans zeros de tete`() {
+        assertEquals("unl-229*-219", canonicalCode("UNL-229*-219"))
+    }
+
+    @Test
+    fun `canonicalCode d une chaine vide renvoie la chaine vide`() {
+        assertEquals("", canonicalCode(""))
+    }
+
+    @Test
+    fun `canonicalCode d une chaine sans tiret - test de caracterisation`() {
+        // Comportement actuel documente, pas une exigence : sans tiret, le code
+        // ne passe jamais par le retrait des zeros de tete, il est seulement mis en minuscules.
+        assertEquals("abc123", canonicalCode("abc123"))
+    }
 }
