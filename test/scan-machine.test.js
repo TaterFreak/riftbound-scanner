@@ -109,3 +109,31 @@ test('reset oublie la lecture en cours', () => {
   machine.reset()
   assert.equal(machine.onFrame('UNL-121-219', base), null)
 })
+
+test('un couple ambigu sans marqueur Metal remonte les deux cartes', () => {
+  // Deux cartes synthétiques partageant un même code, sans suffixe « (Metal) » :
+  // le réglage de finition ne peut alors pas trancher, contrairement à un vrai
+  // couple Normale/Metal du catalogue.
+  const cardA = { code: 'unl-999-999', name: 'Faux Sosie A' }
+  const cardB = { code: 'unl-999-999', name: 'Faux Sosie B' }
+  const ambiguousIndex = buildIndex([cardA, cardB])
+  const machine = createScanMachine({ index: ambiguousIndex })
+  const events = replay(machine, ['UNL-999-999', 'UNL-999-999'])
+  assert.equal(events.length, 1)
+  assert.equal(events[0].type, 'ambiguous')
+  assert.equal(events[0].code, 'unl-999-999')
+  assert.deepEqual(events[0].cards, [cardA, cardB])
+})
+
+test('une exception dans decide n’empêche pas une nouvelle tentative sans trame vide', () => {
+  const machine = createScanMachine({ index })
+  const brokenContext = { finish: 'normal', language: 'en', condition: 'NM' } // entries manquant
+
+  machine.onFrame('UNL-121-219', brokenContext)
+  assert.throws(() => machine.onFrame('UNL-121-219', brokenContext))
+
+  // Même code, toujours sans trame vide entre-temps : avec un contexte réparé,
+  // l'événement doit bien finir par sortir plutôt que d'être avalé pour toujours.
+  const verdict = machine.onFrame('UNL-121-219', base)
+  assert.equal(verdict.type, 'accept')
+})

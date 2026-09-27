@@ -28,7 +28,9 @@ export function createScanMachine({ index, confirmFrames = 2 }) {
     if (resolved.ambiguous) return { type: 'ambiguous', code, cards: resolved.ambiguous }
 
     const card = resolved.card
-    const key = entryKey({ code: card.code, finish, language, condition })
+    // riftcodexId porte l'identité de regroupement ; le code seul ne suffit plus
+    // à distinguer deux variantes physiques (cf. entryKey dans collection/entries.js).
+    const key = entryKey({ code: card.code, riftcodexId: card.riftcodexId, finish, language, condition })
     const existing = entries.findIndex((e) => entryKey(e) === key)
 
     if (existing !== -1) return { type: 'duplicate', code, card, index: existing }
@@ -56,8 +58,12 @@ export function createScanMachine({ index, confirmFrames = 2 }) {
     if (streak < confirmFrames) return null
     if (emitted === code) return null
 
+    // `emitted` n'est posé qu'après un retour réussi de `decide` : si `decide` lève
+    // (contexte invalide, reglage de finition invalide...), la carte reste éligible
+    // à une nouvelle tentative sur la trame suivante, sans exiger de trame vide.
+    const verdict = decide(code, context)
     emitted = code
-    return decide(code, context)
+    return verdict
   }
 
   return { onFrame, decide, reset }
