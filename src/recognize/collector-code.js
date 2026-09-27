@@ -11,7 +11,9 @@ export const KNOWN_PREFIXES = ['sp', 't', 'r']
 
 /**
  * Ensembles valides du catalogue.
- * Liste fermée : validée contre data/cards.json pour rejeter les faux positifs.
+ * Liste fermée : utilisée comme PREFERENCE (non comme filtre) pour discriminer
+ * les faux positifs des correspondances parasites. Les sets inconnus sont acceptés
+ * si leur forme est plausible (numéro >= 2 chiffres), pour la règle « ne jamais perdre un scan ».
  */
 const KNOWN_SETS = ['jdg', 'ogn', 'ogs', 'opp', 'pr', 'sfd', 'unl', 'ven']
 
@@ -57,12 +59,14 @@ export function parseCollectorCode(rawOcrText) {
 
   if (!cleaned) return null
 
-  const candidates = []
+  const knownCandidates = []
+  const unknownCandidates = []
 
+  // 1. Chercher explicitement les sets connus dans la chaine (evite l'ambiguite du regex)
   for (const knownSet of KNOWN_SETS) {
     const setsToSearch = [knownSet]
 
-    // Ajouter les variantes OCR possibles du set
+    // Aussi chercher les variantes OCR du set
     const setWithOcrErrors = knownSet.replace(/[a-z]/g, ch => {
       for (const [digit, letter] of Object.entries(DIGIT_TO_LETTER)) {
         if (letter === ch) return digit
@@ -92,7 +96,7 @@ export function parseCollectorCode(rawOcrText) {
               const head = `${knownSet}-${core.prefix}${core.number}${core.variant}`
               const code = total ? `${head}-${total}` : head
 
-              candidates.push({
+              knownCandidates.push({
                 code,
                 hasTotal: !!total,
                 position: searchPos
@@ -106,12 +110,50 @@ export function parseCollectorCode(rawOcrText) {
     }
   }
 
-  if (candidates.length === 0) return null
+  // 2. Chercher les correspondances du regex global (pour les sets inconnus)
+  if (knownCandidates.length === 0) {
+    const shape = /(?:^|-)([a-z0-9]{2,4})-([a-z0-9*]{1,6})(?:-([a-z0-9]{1,4}))?(?:-|$)/g
+    let match
+    while ((match = shape.exec(cleaned)) !== null) {
+      const setRaw = match[1]
+      const set = toLetters(setRaw)
 
-  candidates.sort((a, b) => {
+      // Valider que le set est bien un set (2-4 lettres apres correction OCR)
+      if (!/^[a-z]{2,4}$/.test(set)) continue
+
+      // Sauter les sets connus (deja traites)
+      if (KNOWN_SETS.includes(set)) continue
+
+      const core = splitCore(match[2])
+      if (!core) continue
+
+      // Accepter seulement si le numero >= 2 chiffres
+      if (core.number.length < 2) continue
+
+      const totalRaw = match[3] ? toDigits(match[3]) : null
+      const total = totalRaw && /^\d+$/.test(totalRaw) ? totalRaw : null
+
+      const head = `${set}-${core.prefix}${core.number}${core.variant}`
+      const code = total ? `${head}-${total}` : head
+
+      unknownCandidates.push({
+        code,
+        hasTotal: !!total,
+        position: match.index
+      })
+    }
+  }
+
+  // Preferer les candidats avec sets connus
+  const allCandidates = knownCandidates.length > 0 ? knownCandidates : unknownCandidates
+
+  if (allCandidates.length === 0) return null
+
+  // Trier : codes complets d'abord, puis position decroissante
+  allCandidates.sort((a, b) => {
     if (b.hasTotal !== a.hasTotal) return b.hasTotal - a.hasTotal
     return b.position - a.position
   })
 
-  return candidates[0].code
+  return allCandidates[0].code
 }

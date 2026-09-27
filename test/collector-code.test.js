@@ -1,4 +1,4 @@
-﻿import test from 'node:test'
+import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { parseCollectorCode, canonicalCode, KNOWN_PREFIXES } from '../src/recognize/collector-code.js'
@@ -73,6 +73,14 @@ test('rejette les correspondances parasites et retourne le vrai code', () => {
 test('rejette un texte qui ne contient aucun vrai code', () => {
   // Sans un code valide après, retourner null
   assert.equal(parseCollectorCode('Deal -2/-2 to a unit.'), null)
+})
+
+test('accepte les sets inconnus si la forme est plausible (extension future)', () => {
+  // La règle « ne jamais perdre un scan » permet aux codes de sets futurs
+  // (sortis après l'instantané du catalogue) d'être lus comme codes inconnus.
+  // Critère de plausibilité : le numéro doit avoir au moins 2 chiffres.
+  assert.equal(parseCollectorCode('RAD-012-200'), 'rad-12-200')
+  assert.equal(parseCollectorCode('ZZZ-999-999'), 'zzz-999-999')
 })
 
 test('les préfixes connus couvrent tous les codes du catalogue réel', async () => {
