@@ -31,10 +31,15 @@ function editDistance(a, b) {
   return previous[b.length]
 }
 
-/** Extrait le numéro de collection du code canonique (dernier segment). */
+/** Extrait le numéro de collection du code canonique (segment du milieu). */
 function extractCollectorNumber(key) {
   const parts = key.split('-')
-  return parseInt(parts[parts.length - 1], 10) || 0
+  // parts[0] = set, parts[1] = numberCard (peut avoir préfixe comme 't' ou suffixe comme 'a', '*')
+  if (parts.length < 2) return 0
+  const numberPart = parts[1]
+  // Extraire le premier groupe de chiffres consécutifs (n'importe où)
+  const match = numberPart.match(/(\d+)/)
+  return match ? parseInt(match[1], 10) : 0
 }
 
 /** Les cartes dont le code est le plus proche, pour l'écran de lecture douteuse. */
