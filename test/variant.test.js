@@ -42,3 +42,19 @@ test('resolveVariant rend la main si le mode metal ne trouve aucune version Meta
   const b = { name: 'Carte B' }
   assert.deepEqual(resolveVariant([a, b], { finish: 'metal' }), { ambiguous: [a, b] })
 })
+
+test('resolveVariant leve une erreur avec un reglage invalide', () => {
+  const a = { name: 'Carte A' }
+  assert.throws(
+    () => resolveVariant([a], { finish: 'invalid' }),
+    /finish doit etre 'normal' ou 'metal'/
+  )
+})
+
+test('resolveVariant leve une erreur sans reglage', () => {
+  const a = { name: 'Carte A' }
+  assert.throws(
+    () => resolveVariant([a], {}),
+    /finish doit etre 'normal' ou 'metal'/
+  )
+})

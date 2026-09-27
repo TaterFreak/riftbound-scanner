@@ -13,7 +13,11 @@ const isMetal = (card) => variantOf(card.name) === 'Metal'
  * aujourd'hui les seuls codes ambigus du catalogue. Toute autre ambiguïté est
  * renvoyée à l'utilisateur plutôt que devinée.
  */
-export function resolveVariant(cards, { finish }) {
+export function resolveVariant(cards, { finish } = {}) {
+  if (!['normal', 'metal'].includes(finish)) {
+    throw new Error(`finish doit etre 'normal' ou 'metal', recu: ${JSON.stringify(finish)}`)
+  }
+
   if (cards.length === 1) return { card: cards[0] }
 
   const wanted = finish === 'metal' ? cards.filter(isMetal) : cards.filter((c) => !isMetal(c))
