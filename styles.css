@@ -1,0 +1,99 @@
+:root {
+  --fond: #101014;
+  --texte: #e8e8ee;
+  --accent: #6ea8fe;
+  --bord: #2a2a35;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fond);
+  color: var(--texte);
+  font: 16px/1.4 system-ui, sans-serif;
+}
+
+button, select, input {
+  min-height: 44px;
+  font: inherit;
+  color: inherit;
+  background: #1b1b24;
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
+button { cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.barre {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--fond);
+  border-bottom: 1px solid var(--bord);
+}
+
+.onglet {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.onglet.actif { box-shadow: inset 0 -2px 0 var(--accent); }
+
+.reglages {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px;
+}
+
+.reglages [role='status'] { flex: 1 1 100%; font-size: 14px; opacity: 0.8; }
+
+#reglage-finition[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
+
+.camera { position: relative; background: #000; aspect-ratio: 3 / 4; }
+
+.camera video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Aligné sur BAND dans src/ui/scan-view.js. Modifier les deux ensemble. */
+.viseur {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 78%;
+  height: 10%;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+#saisie-manuelle { display: flex; gap: 8px; padding: 8px; align-items: center; }
+#saisie-manuelle label { font-size: 14px; opacity: 0.8; }
+#saisie-manuelle input { flex: 1; min-width: 0; }
+
+.dialogue {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: #16161f;
+  border-top: 1px solid var(--accent);
+}
+
+.dialogue p { margin: 0 0 4px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--bord); }
+tr.inconnue { color: #ffb86b; }
