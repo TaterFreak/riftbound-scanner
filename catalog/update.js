@@ -9,18 +9,40 @@ const PAGE_SIZE = 100 // plafond imposé par l'API : size=250 est refusé
 const MIN_RATIO = 0.8
 const MAX_MISSING_RATIO = 0.01
 const REQUIRED = ['code', 'name', 'set', 'number']
+// Le catalogue tient aujourd'hui en 15 pages ; cette borne est un filet de
+// sécurité très large qui protège d'un `pages` corrompu ou d'une API dégradée.
+const MAX_PAGES = 50
 
-/** Parcourt toutes les pages. `fetchFn` est injecté pour rendre la fonction testable. */
+/**
+ * Parcourt toutes les pages. `fetchFn` est injecté pour rendre la fonction testable.
+ *
+ * Le nombre total de pages annoncé par l'API est figé sur la première réponse :
+ * toute réponse ultérieure qui annonce une valeur différente fait échouer la
+ * récupération avec une erreur explicite plutôt que de suivre une cible mouvante.
+ * Un plafond dur (`MAX_PAGES`) complète cette protection pour les cas où la
+ * valeur annoncée ne change pas mais reste absurde.
+ */
 export async function fetchAllCards(fetchFn) {
   const items = []
   let page = 1
-  let pages = 1
+  let pages = null
   do {
+    if (page > MAX_PAGES) {
+      throw new Error(
+        `Riftcodex annonce plus de ${MAX_PAGES} pages, ce qui dépasse largement le catalogue connu : arrêt par sécurité.`
+      )
+    }
     const response = await fetchFn(`${ENDPOINT}?page=${page}&size=${PAGE_SIZE}`)
     if (!response.ok) throw new Error(`Riftcodex a répondu ${response.status} à la page ${page}`)
     const body = await response.json()
     items.push(...body.items)
-    pages = body.pages
+    if (pages === null) {
+      pages = body.pages
+    } else if (body.pages !== pages) {
+      throw new Error(
+        `Le nombre de pages annoncé par Riftcodex a changé en cours de parcours (${pages} puis ${body.pages} à la page ${page}) : arrêt par sécurité.`
+      )
+    }
     page += 1
   } while (page <= pages)
   return items

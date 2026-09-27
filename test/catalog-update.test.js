@@ -59,3 +59,48 @@ test('healthCheck refuse plus de 1 % de champs obligatoires manquants', () => {
 test('healthCheck refuse un catalogue vide', () => {
   assert.equal(healthCheck([], null).ok, false)
 })
+
+/**
+ * Fetch dont le `pages` annoncé dérive à chaque réponse (toujours page + 1),
+ * ce qui reproduit un bug observé en revue : la boucle de fetchAllCards ne
+ * s'arrêtait jamais. Un filet de sécurité interne (`safetyLimit`) borne le
+ * nombre d'appels : même si la protection de fetchAllCards venait à manquer,
+ * ce test échoue vite (quelques appels) au lieu de pendre la suite.
+ */
+function fakeFetchDrifting({ size, safetyLimit = 20 }) {
+  let calls = 0
+  return async (url) => {
+    calls += 1
+    if (calls > safetyLimit) {
+      throw new Error(`fakeFetchDrifting : appelé ${calls} fois, la pagination ne s'est pas arrêtée`)
+    }
+    const page = Number(new URL(url).searchParams.get('page'))
+    const items = Array.from({ length: size }, (_, i) => ({ n: (page - 1) * size + i }))
+    return { ok: true, json: async () => ({ items, page, size, pages: page + 1 }) }
+  }
+}
+
+test('fetchAllCards rejette si le nombre de pages annoncé dérive à chaque réponse', async () => {
+  const fetchFn = fakeFetchDrifting({ size: 10 })
+  await assert.rejects(() => fetchAllCards(fetchFn), /pages/i)
+})
+
+test('fetchAllCards s’arrête après la première page si pages vaut 0 dès le départ', async () => {
+  const fetchFn = fakeFetch({ pages: 0, size: 5, total: 5 })
+  const items = await fetchAllCards(fetchFn)
+  assert.equal(items.length, 5)
+  assert.deepEqual(fetchFn.calls, [1])
+})
+
+test('fetchAllCards se termine proprement si une page renvoie des items vides', async () => {
+  const calls = []
+  const fetchFn = async (url) => {
+    const page = Number(new URL(url).searchParams.get('page'))
+    calls.push(page)
+    const items = page === 1 ? [{ n: 0 }] : []
+    return { ok: true, json: async () => ({ items, page, size: 100, pages: 2 }) }
+  }
+  const items = await fetchAllCards(fetchFn)
+  assert.deepEqual(items, [{ n: 0 }])
+  assert.deepEqual(calls, [1, 2])
+})
