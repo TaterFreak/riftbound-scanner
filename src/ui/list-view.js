@@ -29,52 +29,61 @@ export function createListView({ root, getState, setState }) {
     return select
   }
 
-  function ligne(entry, i) {
-    const tr = document.createElement('tr')
-    if (entry.unknown) tr.classList.add('inconnue')
+  // Carte empilée plutôt que ligne de tableau : sur un téléphone portrait, une table à
+  // 8 colonnes déborde toujours de la largeur de l'écran, ce qui fait défiler toute la
+  // page latéralement (en-tête d'onglets compris). Ici chaque contrôle passe à la ligne
+  // (flex-wrap en CSS) au lieu d'élargir le conteneur.
+  function carte(entry, i) {
+    const item = document.createElement('li')
+    item.className = 'carte'
+    if (entry.unknown) item.classList.add('inconnue')
 
-    const nom = document.createElement('td')
+    const entete = document.createElement('div')
+    entete.className = 'carte-entete'
+    const nom = document.createElement('span')
     nom.textContent = entry.unknown ? `Inconnue (${entry.rawCode})` : entry.name
-    const code = document.createElement('td')
+    const code = document.createElement('span')
+    code.className = 'carte-code'
     code.textContent = entry.code
-    const set = document.createElement('td')
+    entete.append(nom, code)
+
+    const corps = document.createElement('div')
+    corps.className = 'carte-corps'
+
+    const set = document.createElement('span')
     set.textContent = entry.set
-    const finition = document.createElement('td')
+    const finition = document.createElement('span')
     finition.textContent = entry.finish === 'metal' ? 'Metal' : 'Normale'
 
-    const quantite = document.createElement('td')
-    quantite.textContent = entry.quantity
+    const quantite = document.createElement('span')
+    quantite.className = 'carte-qte'
+    const compte = document.createElement('span')
+    compte.textContent = `×${entry.quantity}`
     const plus = document.createElement('button')
     plus.type = 'button'
     plus.textContent = '+'
+    plus.setAttribute('aria-label', 'Ajouter un exemplaire')
     plus.addEventListener('click', () => setState({ entries: incrementEntry(getState().entries, i) }))
-    quantite.append(plus)
+    quantite.append(compte, plus)
 
-    const langue = document.createElement('td')
-    langue.append(
-      selecteur(LANGUES, entry.language, (v) =>
-        setState({ entries: updateEntry(getState().entries, i, { language: v }) })
-      )
+    const langue = selecteur(LANGUES, entry.language, (v) =>
+      setState({ entries: updateEntry(getState().entries, i, { language: v }) })
     )
 
-    const etat = document.createElement('td')
-    etat.append(
-      selecteur(CONDITIONS, entry.condition, (v) =>
-        setState({ entries: updateEntry(getState().entries, i, { condition: v }) })
-      )
+    const etat = selecteur(CONDITIONS, entry.condition, (v) =>
+      setState({ entries: updateEntry(getState().entries, i, { condition: v }) })
     )
 
-    const actions = document.createElement('td')
     const supprimer = document.createElement('button')
     supprimer.type = 'button'
     supprimer.textContent = 'Supprimer'
     supprimer.addEventListener('click', () =>
       setState({ entries: removeEntry(getState().entries, i) })
     )
-    actions.append(supprimer)
 
-    tr.append(nom, code, set, finition, quantite, langue, etat, actions)
-    return tr
+    corps.append(set, finition, quantite, langue, etat, supprimer)
+    item.append(entete, corps)
+    return item
   }
 
   function render({ entries }) {
@@ -100,20 +109,10 @@ export function createListView({ root, getState, setState }) {
       return
     }
 
-    const table = document.createElement('table')
-    const thead = document.createElement('thead')
-    const entetes = ['Nom', 'Code', 'Set', 'Finition', 'Qté', 'Langue', 'État', '']
-    const tr = document.createElement('tr')
-    for (const texte of entetes) {
-      const th = document.createElement('th')
-      th.textContent = texte
-      tr.append(th)
-    }
-    thead.append(tr)
-    const tbody = document.createElement('tbody')
-    entries.forEach((entry, i) => tbody.append(ligne(entry, i)))
-    table.append(thead, tbody)
-    root.append(table)
+    const liste = document.createElement('ul')
+    liste.className = 'liste-collection'
+    entries.forEach((entry, i) => liste.append(carte(entry, i)))
+    root.append(liste)
   }
 
   return { render }

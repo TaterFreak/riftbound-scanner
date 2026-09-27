@@ -81,27 +81,54 @@ export function createScanView({ root, machine, getState, setState, onStatus }) 
     if (event.type === 'duplicate') {
       const { entries } = getState()
       const quantity = entries[event.index].quantity
+      onStatus(`${event.card.name} déjà scannée ×${quantity}.`)
       ask(`${event.card.name} — déjà scannée ×${quantity}. Ajouter un exemplaire ?`, [
-        ['Ajouter', () => setState({ entries: incrementEntry(getState().entries, event.index) })],
-        ['Ignorer', () => {}]
+        [
+          'Ajouter',
+          () => {
+            setState({ entries: incrementEntry(getState().entries, event.index) })
+            onStatus(`${event.card.name} : quantité portée à ${quantity + 1}.`)
+          }
+        ],
+        ['Ignorer', () => onStatus(`${event.card.name} : doublon ignoré.`)]
       ])
       return
     }
 
     if (event.type === 'ambiguous') {
+      onStatus('Plusieurs cartes correspondent à ce code : choisis laquelle scanner.')
       ask(
         'Ce code correspond à plusieurs cartes. Laquelle ?',
-        event.cards.map((card) => [card.name, () => commit(card, event.code)])
+        event.cards.map((card) => [
+          card.name,
+          () => {
+            commit(card, event.code)
+            onStatus(`${card.name} ajoutée`)
+          }
+        ])
       )
       return
     }
 
     if (event.type === 'unknown') {
-      const choix = event.candidates.map((card) => [card.name, () => commit(card, event.code)])
+      onStatus(`Code ${event.code} absent du catalogue : choisis une action.`)
+      const choix = event.candidates.map((card) => [
+        card.name,
+        () => {
+          commit(card, event.code)
+          onStatus(`${card.name} ajoutée`)
+        }
+      ])
       ask(`Code ${event.code} absent du catalogue.`, [
         ...choix,
-        ['Conserver tel quel', () => commit(null, event.code)],
-        ['Ignorer', () => {}]
+        [
+          'Conserver tel quel',
+          () => {
+            commit(null, event.code)
+            onStatus(`Code ${event.code} conservé comme carte inconnue.`)
+          }
+        ],
+        ['Ignorer', () => onStatus(`Code ${event.code} ignoré.`)]
       ])
     }
   }

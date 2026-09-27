@@ -94,6 +94,47 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .dialogue p { margin: 0 0 4px; }
 
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--bord); }
-tr.inconnue { color: #ffb86b; }
+/*
+ * Liste de collection : une carte empilée par ligne plutôt qu'un tableau.
+ * Une table à 8 colonnes déborde horizontalement sur un téléphone portrait et
+ * entraîne toute la page dans un défilement latéral ; ici chaque contrôle peut
+ * passer à la ligne (flex-wrap) sans jamais élargir la page.
+ */
+.liste-collection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  list-style: none;
+  margin: 0;
+}
+
+.carte {
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.carte.inconnue { border-color: #ffb86b; color: #ffb86b; }
+
+.carte-entete {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: 600;
+}
+
+.carte-entete .carte-code { font-weight: 400; opacity: 0.8; }
+
+.carte-corps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.carte-corps .carte-qte { display: inline-flex; align-items: center; gap: 6px; }
