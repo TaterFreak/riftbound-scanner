@@ -79,3 +79,45 @@ test('dedupeByCode signale une ambiguïté résiduelle qui n\'est pas un couple 
     { code: 'yyy-2-9', reason: 'unexplained-variants', names: ['Carte A', 'Carte B'] }
   ])
 })
+
+test('dedupeByCode: groupe de 3+ lignes avec 1 incomplète + Normale + Metal', () => {
+  const cards = [
+    { code: 'zzz-3-9', name: 'Incomplete Card', tcgplayerId: null },
+    { code: 'zzz-3-9', name: 'Normal Card', tcgplayerId: '100' },
+    { code: 'zzz-3-9', name: 'Metal Card (Metal)', tcgplayerId: '101' }
+  ]
+  const { cards: kept, anomalies } = dedupeByCode(cards)
+  assert.equal(kept.length, 2)
+  assert.deepEqual(
+    kept.map((c) => c.name).sort(),
+    ['Metal Card (Metal)', 'Normal Card']
+  )
+  assert.deepEqual(anomalies, [])
+})
+
+test('dedupeByCode: groupe avec deux Metal complètes signale une anomalie', () => {
+  const cards = [
+    { code: 'aaa-4-9', name: 'Metal One (Metal)', tcgplayerId: '200' },
+    { code: 'aaa-4-9', name: 'Metal Two (Metal)', tcgplayerId: '201' }
+  ]
+  const { cards: kept, anomalies } = dedupeByCode(cards)
+  assert.equal(kept.length, 2)
+  assert.deepEqual(anomalies, [
+    { code: 'aaa-4-9', reason: 'unexplained-variants', names: ['Metal One (Metal)', 'Metal Two (Metal)'] }
+  ])
+})
+
+test('dedupeByCode: Metal sans tcgplayerId est écartée silencieusement (caractérisation)', () => {
+  // COMPORTEMENT CONNU ET ASSUMÉ : une variante physique réelle (Metal) pas encore
+  // référencée sur TCGplayer disparaîtrait silencieusement. Cet angle mort est une
+  // conséquence directe de la règle « écarter les incomplètes, garder une seule
+  // complète par groupe ». Toute évolution future doit reconsidérer sciemment ce cas.
+  const cards = [
+    { code: 'bbb-5-9', name: 'Normal Card', tcgplayerId: '300' },
+    { code: 'bbb-5-9', name: 'Metal Card (Metal)', tcgplayerId: null }
+  ]
+  const { cards: kept, anomalies } = dedupeByCode(cards)
+  assert.equal(kept.length, 1)
+  assert.equal(kept[0].name, 'Normal Card')
+  assert.deepEqual(anomalies, [])
+})
