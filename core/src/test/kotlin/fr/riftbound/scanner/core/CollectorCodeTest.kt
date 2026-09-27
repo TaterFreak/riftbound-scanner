@@ -24,7 +24,12 @@ class CollectorCodeTest {
     }
 
     @Test
-    fun `canonicalCode garde un suffixe de variante sans zeros de tete`() {
+    fun `canonicalCode retire les zeros de tete en presence d un suffixe de variante`() {
+        assertEquals("unl-29*-219", canonicalCode("UNL-029*-219"))
+    }
+
+    @Test
+    fun `canonicalCode garde un suffixe de variante deja sans zeros de tete`() {
         assertEquals("unl-229*-219", canonicalCode("UNL-229*-219"))
     }
 
