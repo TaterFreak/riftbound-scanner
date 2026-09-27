@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
-    kotlin("android")
+    // kotlin("android") retire : le support Kotlin integre d AGP 9 le
+    // remplace (voir android/build.gradle.kts pour le detail).
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
