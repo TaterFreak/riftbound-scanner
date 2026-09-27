@@ -11,7 +11,12 @@ import { detectLanguage } from '../recognize/language.js'
 // du flux vidéo intrinsèque : `grabViewfinder` (src/scan/camera.js) passe par
 // `viewfinderSource` pour tenir compte du recadrage `object-fit: cover`.
 const BAND = { top: 0.78, height: 0.1, left: 0.04, right: 0.04 } // bande basse, là où le code est imprimé
-const INTERVAL = 400
+
+// Pause entre deux passes. `takePhoto()` est nettement plus lent qu'une lecture de
+// trame (compte plusieurs centaines de ms) : la boucle enchaîne capture puis OCR sans
+// jamais empiler les passes (voir start()/loop() plus bas), cette pause ne fait que
+// laisser respirer l'interface entre deux passes, elle ne fixe pas leur cadence.
+const PAUSE_MS = 150
 
 /** Tronque un texte de diagnostic pour qu'il tienne sur une ligne. */
 function truncate(text, max) {
@@ -27,14 +32,16 @@ export function createScanView({ root, machine, getState, setState, onStatus }) 
   const boutonLangue = root.querySelector('#reglage-langue')
   const caseDiagnostic = root.querySelector('#case-diagnostic')
   const panneauDiagnostic = root.querySelector('#diagnostic')
+  const diagnosticMode = root.querySelector('#diagnostic-mode')
   const diagnosticDimensions = root.querySelector('#diagnostic-dimensions')
   const diagnosticTexte = root.querySelector('#diagnostic-texte')
   const diagnosticCode = root.querySelector('#diagnostic-code')
+  const diagnosticDuree = root.querySelector('#diagnostic-duree')
 
   let camera = null
   let ocr = null
-  let timer = null
-  let busy = false
+  let running = false
+  let pauseTimer = null
 
   const beep = () => {
     const context = new AudioContext()
@@ -148,31 +155,50 @@ export function createScanView({ root, machine, getState, setState, onStatus }) 
   }
 
   /**
-   * Affiche, sous le viseur, ce que voient le flux et l'OCR. C'est l'outil de réglage :
-   * sans lui, impossible de savoir si le viseur cadre la bonne zone ou si l'OCR lit
-   * n'importe quoi.
+   * Affiche, sous le viseur, ce que voient le flux (ou la photo) et l'OCR. C'est l'outil
+   * de réglage : sans lui, impossible de savoir si le viseur cadre la bonne zone, si
+   * l'OCR lit n'importe quoi, ou si la capture photo plein capteur est bien active — les
+   * trois informations qui permettront de juger si cette voie tient ou s'il faut passer
+   * au natif.
    */
-  function afficherDiagnostic(texte) {
+  function afficherDiagnostic(texte, frame, dureePasseMs) {
     if (panneauDiagnostic.hidden) return
     const box = video.getBoundingClientRect()
+    diagnosticMode.textContent = `chemin : ${frame.mode === 'photo' ? 'photo' : 'vidéo'}`
     diagnosticDimensions.textContent =
-      `flux ${video.videoWidth}×${video.videoHeight} — boîte ${Math.round(box.width)}×${Math.round(box.height)}`
+      `flux ${video.videoWidth}×${video.videoHeight} — photo ${frame.mode === 'photo' ? `${frame.width}×${frame.height}` : '—'} — boîte ${Math.round(box.width)}×${Math.round(box.height)}`
     diagnosticTexte.textContent = `OCR : « ${truncate(texte ?? '', 40)} »`
     const code = parseCollectorCode(texte)
     diagnosticCode.textContent = `code : ${code ?? '—'}`
+    diagnosticDuree.textContent = `passe : ${Math.round(dureePasseMs)} ms`
   }
 
+  /** Une passe : capture (photo ou, en repli, vidéo) puis OCR. Jamais chevauchée : voir loop(). */
   async function tick() {
-    if (busy || !dialogue.hidden) return
-    busy = true
-    try {
-      grabViewfinder(video, canvas, BAND)
-      const texte = await ocr.read(canvas)
-      afficherDiagnostic(texte)
-      const { entries, settings } = getState()
-      handle(machine.onFrame(texte, { ...settings, entries }))
-    } finally {
-      busy = false
+    if (!dialogue.hidden || !camera || !ocr) return
+    const debut = performance.now()
+    const frame = await camera.grab()
+    if (!frame) return
+    grabViewfinder(video, canvas, BAND, frame)
+    const texte = await ocr.read(canvas)
+    afficherDiagnostic(texte, frame, performance.now() - debut)
+    const { entries, settings } = getState()
+    handle(machine.onFrame(texte, { ...settings, entries }))
+  }
+
+  /**
+   * Enchaîne capture, lecture, recommence — sans jamais empiler les passes : la passe
+   * suivante n'est programmée qu'une fois la précédente entièrement terminée (capture
+   * *et* OCR), avec une petite pause entre les deux pour laisser respirer l'interface.
+   * `running` coupe la boucle proprement dès que la vue s'arrête.
+   */
+  async function loop() {
+    while (running) {
+      await tick()
+      if (!running) break
+      await new Promise((resolve) => {
+        pauseTimer = setTimeout(resolve, PAUSE_MS)
+      })
     }
   }
 
@@ -252,10 +278,15 @@ export function createScanView({ root, machine, getState, setState, onStatus }) 
       onStatus('Chargement de la reconnaissance…')
       ocr = await createTesseractOcr()
       onStatus('Prêt. Vise le code en bas de la carte.')
-      timer = setInterval(tick, INTERVAL)
+      running = true
+      loop() // boucle de fond : ne pas attendre, elle tourne jusqu'à stop()
     },
     stop() {
-      clearInterval(timer)
+      running = false
+      if (pauseTimer !== null) {
+        clearTimeout(pauseTimer)
+        pauseTimer = null
+      }
       camera?.stop()
       ocr?.terminate()
       camera = null
