@@ -11,11 +11,18 @@ const etat = { entries: [], settings: { finish: 'normal', language: 'en', condit
 const getState = () => etat
 const abonnes = []
 
+// Point de notification unique : tout changement d'état, y compris le chargement
+// initial plus bas, passe par ici. Un abonné ajouté plus tard est ainsi couvert
+// sans qu'on ait à dupliquer son appel à côté de chaque mise à jour.
+function notifierTous() {
+  for (const notifier of abonnes) notifier(etat)
+}
+
 function setState(patch) {
   Object.assign(etat, patch)
   if (patch.entries) store.save(etat.entries)
   if (patch.settings) store.saveSettings(etat.settings)
-  for (const notifier of abonnes) notifier(etat)
+  notifierTous()
 }
 
 const status = document.querySelector('#etat-scan')
@@ -63,7 +70,7 @@ function afficher(onglet) {
 document.querySelector('#onglet-scan').addEventListener('click', () => afficher('scan'))
 document.querySelector('#onglet-liste').addEventListener('click', () => afficher('liste'))
 
-listView.render(etat)
+notifierTous()
 afficher('scan')
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js')
