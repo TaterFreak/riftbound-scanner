@@ -54,4 +54,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    // Le theme XML "Theme.Material3.DayNight.NoActionBar" du manifest
+    // n existe pas dans androidx.compose.material3 (Compose pur) : il
+    // vient de la bibliotheque de vues Material Components.
+    implementation("com.google.android.material:material:1.13.0")
 }
