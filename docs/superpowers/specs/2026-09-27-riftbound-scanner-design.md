@@ -22,7 +22,7 @@ d'une spec séparée.
 | Flux de scan | Hybride : ajout automatique si lecture nette et carte inédite, écran de confirmation sinon | Rapide sur le cas courant, sûr sur les cas limites |
 | Catalogue | Snapshot JSON figé au build depuis l'API Riftcodex | Fonctionne hors-ligne, aucun rate-limit pendant un scan |
 | Clé d'identification | `riftbound_id` (ex. `unl-116a-219`), qui est le code imprimé | Contient le suffixe de variante ; le seul `collector_number` confondrait 116 et 116a |
-| Finition | Réglage de session collant « Normale / Metal », qui arbitre les codes ambigus | La finition Metal se lit dans le nom de la carte au catalogue, pas besoin de liste manuelle |
+| Finition | Réglage de session collant « Normale / Metal », qui arbitre les 16 codes ambigus | La finition Metal se lit dans le suffixe du nom au catalogue, pas besoin de liste manuelle |
 | Langue | Détection best-effort par mots-outils, adossée à un réglage de session | Aucune base publique ne fournit les noms traduits |
 | État | Défaut NM, modifiable ligne par ligne après coup | Non déterminable visuellement ; ne doit pas ralentir le scan |
 | Build | ESM natif, aucun bundler, `node --test` | Aligné sur les conventions du dépôt `news` |
@@ -53,22 +53,26 @@ validation d'une forme rigide.
 
 #### Deux natures de collisions, traitées différemment
 
-Vérifié sur les 1451 cartes : 147 codes apparaissent deux fois. Ils se répartissent
-en deux cas nets, qui appellent deux traitements opposés.
+Vérifié sur les 1451 cartes : 147 codes apparaissent deux fois. Le discriminant
+n'est pas le nom — il est la présence d'un `tcgplayer_id`.
 
-**95 doublons de données.** Deux lignes de même code *et de même nom*. Sur ces 95
-groupes, sans exception, exactement une ligne porte un `tcgplayer_id` et exactement
-une porte `new: true` — la seconde est une fiche d'ingestion incomplète. Le script
-écarte celle qui n'a pas de `tcgplayer_id`. Le catalogue tombe à **1356 cartes**.
+**131 doublons de données.** Dans ces groupes, une partie des lignes porte un
+`tcgplayer_id` et l'autre non. Les lignes sans `tcgplayer_id` portent toutes
+`new: true`, sans un seul contre-exemple sur les 131 groupes : ce sont des fiches
+d'ingestion incomplètes, parfois sous un nom légèrement différent de la fiche
+complète. Règle : **dans un groupe de même code, si au moins une ligne porte un
+`tcgplayer_id`, écarter celles qui n'en portent pas.** Le catalogue tombe à
+**1320 cartes**.
 
-**52 variantes réelles.** Deux cartes physiquement différentes partageant le code
-imprimé, distinguées par le suffixe du nom : 16 `(Metal)`, 15 `(Alternate Art)`,
-12 `(Overnumbered)`, et 9 paires de noms sans rapport. Le script les conserve toutes.
+**16 variantes réelles.** Les seuls groupes dont toutes les lignes portent un
+`tcgplayer_id`, et ils forment tous exactement le couple `X` / `X (Metal)` : une
+carte et sa version Metal, physiquement différentes, partageant le code imprimé.
 
-Conséquence directe sur l'application : **un code scanné peut légitimement désigner
-deux cartes**. L'écran de désambiguïsation n'est donc pas un filet de sécurité
-optionnel, c'est un chemin nominal. Le réglage de session « Normale / Metal » tranche
-automatiquement les 16 groupes Metal ; les 36 autres posent la question.
+Conséquence : après dédoublonnage, **16 codes seulement restent ambigus, et tous
+opposent une carte normale à sa version Metal**. Le réglage de session
+« Normale / Metal » les tranche donc intégralement, sans jamais interrompre le scan.
+L'écran de choix de variante reste implémenté comme filet — si une future extension
+introduit une ambiguïté d'une autre nature, l'application demande au lieu de deviner.
 
 Le snapshot est commité dans le dépôt. L'application ne contacte jamais d'API à
 l'exécution.
@@ -131,8 +135,9 @@ viseur ouvert en continu
             ├─ non  → ligne « inconnue » conservée avec le code brut,
             │         suggestion de mettre à jour le catalogue
             ├─ plusieurs cartes, non tranchées par la finition de session
-            │        → écran de choix de variante (Metal / Alternate Art /
-            │          Overnumbered / homonyme), avec les illustrations
+            │        → écran de choix de variante, avec les illustrations
+            │          (aujourd'hui inatteignable : les 16 codes ambigus
+            │           sont tous des couples Normale/Metal)
             └─ une seule carte → est-elle déjà dans la collection ?
                  ├─ non  → ajout, bip, le viseur continue
                  └─ oui  → figer : « Déjà scannée ×N — ajouter un exemplaire ? »
@@ -199,7 +204,7 @@ Règle directrice : **ne jamais perdre un scan**.
 **Unitaires** (`node --test`, sans navigateur) : `parseCollectorCode` sur des chaînes
 OCR réalistes et bruitées, `matchCards`, `resolveVariant`, `candidatesFor`,
 `detectLanguage`, la déduplication et le calcul de quantité, la génération du CSV
-incluant l'échappement et le BOM, la règle d'élimination des 95 doublons de données
+incluant l'échappement et le BOM, la règle d'élimination des 131 doublons de données
 et la garde de santé du script de catalogue.
 
 Le dépôt embarque un extrait figé du catalogue réel comme fixture, incluant les cas
@@ -239,8 +244,9 @@ d'illustration, publication sur Cardmarket.
 3. **Dépendance à Riftcodex** — API communautaire sans garantie de pérennité. Le
    snapshot commité protège l'usage quotidien ; l'acquisition est isolée dans un
    seul fichier, remplaçable par une autre source sans toucher au reste.
-4. **Qualité des données amont** — les 95 doublons prouvent que l'ingestion Riftcodex
-   n'est pas parfaite. La règle d'élimination est vérifiée sur 95 groupes sur 95 à ce
-   jour, mais elle repose sur une régularité observée, pas garantie. Le script
-   signale tout groupe de doublons que la règle n'explique pas, au lieu de choisir
-   au hasard.
+4. **Qualité des données amont** — les 131 doublons prouvent que l'ingestion
+   Riftcodex n'est pas parfaite. La règle d'élimination est vérifiée sur 131 groupes
+   sur 131 à ce jour, mais elle repose sur une régularité observée, pas garantie. Le
+   script signale tout groupe de doublons que la règle n'explique pas — notamment un
+   groupe dont aucune ligne n'aurait de `tcgplayer_id` — au lieu de choisir au
+   hasard.

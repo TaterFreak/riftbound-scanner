@@ -1,0 +1,265 @@
+[
+  {
+    "id": "69c4407d9288b1e85d94de95",
+    "name": "Bewitching Spirit",
+    "riftbound_id": "unl-121-219",
+    "tcgplayer_id": "685592",
+    "collector_number": 121,
+    "classification": {
+      "type": "Unit",
+      "supertype": null,
+      "rarity": "Common",
+      "domain": [
+        "Chaos"
+      ]
+    },
+    "set": {
+      "set_id": "UNL",
+      "label": "Unleashed"
+    },
+    "metadata": {
+      "clean_name": "Bewitching Spirit",
+      "alternate_art": false,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": false
+  },
+  {
+    "id": "6a56ab99ff602fd324f4765d",
+    "name": "Sandswept Tomb",
+    "riftbound_id": "ven-164-166",
+    "tcgplayer_id": "706097",
+    "collector_number": 164,
+    "classification": {
+      "type": "Battlefield",
+      "supertype": null,
+      "rarity": "Uncommon",
+      "domain": [
+        "Colorless"
+      ]
+    },
+    "set": {
+      "set_id": "VEN",
+      "label": "Vendetta"
+    },
+    "metadata": {
+      "clean_name": "Sandswept Tomb",
+      "alternate_art": false,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": false
+  },
+  {
+    "id": "6a517607ad64d2d80a4f03c2",
+    "name": "Sandswept Tomb",
+    "riftbound_id": "ven-164-166",
+    "tcgplayer_id": null,
+    "collector_number": 164,
+    "classification": {
+      "type": "Battlefield",
+      "supertype": null,
+      "rarity": "Uncommon",
+      "domain": [
+        "Colorless"
+      ]
+    },
+    "set": {
+      "set_id": "VEN",
+      "label": "Vendetta"
+    },
+    "metadata": {
+      "clean_name": null,
+      "alternate_art": false,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": true
+  },
+  {
+    "id": "69bc5befd308c64675ca89cf",
+    "name": "Yasuo - Unforgiven",
+    "riftbound_id": "opp-259-298",
+    "tcgplayer_id": "662890",
+    "collector_number": 259,
+    "classification": {
+      "type": "Legend",
+      "supertype": "Champion",
+      "rarity": "Promo",
+      "domain": [
+        "Calm",
+        "Chaos"
+      ]
+    },
+    "set": {
+      "set_id": "OPP",
+      "label": "Riftbound Organized Play Promotional Cards"
+    },
+    "metadata": {
+      "clean_name": "Yasuo Unforgiven",
+      "alternate_art": false,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": false
+  },
+  {
+    "id": "69bc5bf1d308c64675ca89f7",
+    "name": "Yasuo - Unforgiven (Metal)",
+    "riftbound_id": "opp-259-298",
+    "tcgplayer_id": "669257",
+    "collector_number": 259,
+    "classification": {
+      "type": "Legend",
+      "supertype": "Champion",
+      "rarity": "Promo",
+      "domain": [
+        "Calm",
+        "Chaos"
+      ]
+    },
+    "set": {
+      "set_id": "OPP",
+      "label": "Riftbound Organized Play Promotional Cards"
+    },
+    "metadata": {
+      "clean_name": "Yasuo Unforgiven Metal",
+      "alternate_art": false,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": false
+  },
+  {
+    "id": "6a56ab9aff602fd324f47665",
+    "name": "Shen, Scourge of Shadows (Alternate Art)",
+    "riftbound_id": "ven-042a-166",
+    "tcgplayer_id": "706105",
+    "collector_number": 42,
+    "classification": {
+      "type": "Unit",
+      "supertype": "Champion",
+      "rarity": "Rare",
+      "domain": [
+        "Calm"
+      ]
+    },
+    "set": {
+      "set_id": "VEN",
+      "label": "Vendetta"
+    },
+    "metadata": {
+      "clean_name": "Shen Scourge of Shadows Alternate Art",
+      "alternate_art": true,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": false
+  },
+  {
+    "id": "6a517608ad64d2d80a4f03ca",
+    "name": "Shen, Scourge of Shadows",
+    "riftbound_id": "ven-042a-166",
+    "tcgplayer_id": null,
+    "collector_number": 42,
+    "classification": {
+      "type": "Unit",
+      "supertype": "Champion",
+      "rarity": "Rare",
+      "domain": [
+        "Calm"
+      ]
+    },
+    "set": {
+      "set_id": "VEN",
+      "label": "Vendetta"
+    },
+    "metadata": {
+      "clean_name": null,
+      "alternate_art": false,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": true
+  },
+  {
+    "id": "69c4407c9288b1e85d94de8a",
+    "name": "Vi - Piltover Enforcer (Signature)",
+    "riftbound_id": "unl-229*-219",
+    "tcgplayer_id": "685522",
+    "collector_number": 229,
+    "classification": {
+      "type": "Legend",
+      "supertype": null,
+      "rarity": "Rare",
+      "domain": [
+        "Fury",
+        "Order"
+      ]
+    },
+    "set": {
+      "set_id": "UNL",
+      "label": "Unleashed"
+    },
+    "metadata": {
+      "clean_name": "Vi Piltover Enforcer Signature",
+      "alternate_art": false,
+      "overnumbered": false,
+      "signature": true
+    },
+    "new": false
+  },
+  {
+    "id": "69c700533fb41419ee7cebb2",
+    "name": "Gold // Buff",
+    "riftbound_id": "sfd-t03",
+    "tcgplayer_id": "678188",
+    "collector_number": 3,
+    "classification": {
+      "type": "Gear",
+      "supertype": "Token",
+      "rarity": "Common",
+      "domain": [
+        "Colorless"
+      ]
+    },
+    "set": {
+      "set_id": "SFD",
+      "label": "Spiritforged"
+    },
+    "metadata": {
+      "clean_name": "Gold Buff",
+      "alternate_art": false,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": false
+  },
+  {
+    "id": "69c4407d9288b1e85d94de91",
+    "name": "Red Brambleback (Alternate Art)",
+    "riftbound_id": "unl-029a-219",
+    "tcgplayer_id": "685588",
+    "collector_number": 29,
+    "classification": {
+      "type": "Unit",
+      "supertype": null,
+      "rarity": "Epic",
+      "domain": [
+        "Fury"
+      ]
+    },
+    "set": {
+      "set_id": "UNL",
+      "label": "Unleashed"
+    },
+    "metadata": {
+      "clean_name": "Red Brambleback Alternate Art",
+      "alternate_art": true,
+      "overnumbered": false,
+      "signature": false
+    },
+    "new": false
+  }
+]
