@@ -32,10 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import fr.riftbound.scanner.core.Entry
-import fr.riftbound.scanner.core.incrementEntry
-import fr.riftbound.scanner.core.removeEntry
 import fr.riftbound.scanner.core.toCsv
-import fr.riftbound.scanner.core.updateEntry
 import java.io.IOException
 import java.time.LocalDate
 
@@ -46,10 +43,21 @@ private val LANGUAGES = listOf("en", "fr")
 /** Taille minimale d'une cible tactile (recommandation Material) : 44 points. */
 private val MIN_TOUCH_TARGET = 44.dp
 
+/**
+ * Chaque correction (increment, langue, etat, suppression) applique sa
+ * transformation sur la collection courante, tenue par l'appelant (index
+ * seulement, pas de liste transportee) : voir le commentaire dans
+ * MainActivity.kt sur pourquoi renvoyer une liste calculee ici serait a
+ * nouveau expose au meme risque de capture perimee que celui corrige dans
+ * l'ecran de scan.
+ */
 @Composable
 fun CollectionScreen(
     entries: List<Entry>,
-    onEntriesChange: (List<Entry>) -> Unit,
+    onIncrement: (index: Int) -> Unit,
+    onLanguageChange: (index: Int, value: String) -> Unit,
+    onConditionChange: (index: Int, value: String) -> Unit,
+    onRemove: (index: Int) -> Unit,
     collectionWasCorrupted: Boolean,
     onCorruptionWarningDismissed: () -> Unit
 ) {
@@ -110,14 +118,10 @@ fun CollectionScreen(
                     val entry = entries[index]
                     CollectionRow(
                         entry = entry,
-                        onIncrement = { onEntriesChange(incrementEntry(entries, index)) },
-                        onLanguageChange = { value ->
-                            onEntriesChange(updateEntry(entries, index, language = value))
-                        },
-                        onConditionChange = { value ->
-                            onEntriesChange(updateEntry(entries, index, condition = value))
-                        },
-                        onRemove = { onEntriesChange(removeEntry(entries, index)) }
+                        onIncrement = { onIncrement(index) },
+                        onLanguageChange = { value -> onLanguageChange(index, value) },
+                        onConditionChange = { value -> onConditionChange(index, value) },
+                        onRemove = { onRemove(index) }
                     )
                 }
             }

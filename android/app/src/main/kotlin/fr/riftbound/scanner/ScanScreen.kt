@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,25 +69,28 @@ import fr.riftbound.scanner.core.CommitResult
 import fr.riftbound.scanner.core.Entry
 import fr.riftbound.scanner.core.ScanEvent
 import fr.riftbound.scanner.core.ScanMachine
-import fr.riftbound.scanner.core.commitCard
 import fr.riftbound.scanner.core.pickCodeText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.Instant
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
  * Ecran de scan. La collection et les reglages de session (finition, langue,
  * etat par defaut) vivent au niveau de l'application : cet ecran les recoit
- * en parametre et notifie ses changements, pour que la collection scannee ici
- * soit aussi celle affichee et persistee depuis l'ecran Collection.
+ * en parametre pour affichage et notifie ses changements de reglages.
+ *
+ * Pour la collection, l'ecran ne renvoie plus de liste calculee : il
+ * demande a l'appelant (`onCommit`) d'appliquer la decision sur la
+ * collection courante et de renvoyer ce qui s'est passe. C'est ce qui
+ * empeche une liste capturee trop tot de venir ecraser la vraie
+ * collection (voir le commentaire au point de capture, plus bas).
  */
 @Composable
 fun ScanScreen(
     entries: List<Entry>,
-    onEntriesChange: (List<Entry>) -> Unit,
+    onCommit: (card: Card?, rawCode: String, finish: String, language: String, condition: String) -> CommitResult,
     settings: SessionSettings,
     onSettingsChange: (SessionSettings) -> Unit
 ) {
@@ -108,7 +112,7 @@ fun ScanScreen(
     ScanScreenContent(
         catalog = loadedCatalog,
         entries = entries,
-        onEntriesChange = onEntriesChange,
+        onCommit = onCommit,
         settings = settings,
         onSettingsChange = onSettingsChange
     )
@@ -118,7 +122,7 @@ fun ScanScreen(
 private fun ScanScreenContent(
     catalog: Catalog,
     entries: List<Entry>,
-    onEntriesChange: (List<Entry>) -> Unit,
+    onCommit: (card: Card?, rawCode: String, finish: String, language: String, condition: String) -> CommitResult,
     settings: SessionSettings,
     onSettingsChange: (SessionSettings) -> Unit
 ) {
@@ -131,9 +135,24 @@ private fun ScanScreenContent(
 
     val scanMachine = remember(catalog) { ScanMachine(catalog) }
 
-    // Etat par defaut applique a une nouvelle carte scannee : pas de selecteur
-    // dedie sur cet ecran, ajustable plus tard depuis la collection.
-    val condition = settings.condition
+    // `entries` et `condition` (derive de `settings`, lui-meme un simple
+    // parametre) sont des valeurs ordinaires, pas des etats de snapshot
+    // (`mutableStateOf`). Plus bas, `CardAnalyzer` est construit a
+    // l'interieur du `factory` d'un `AndroidView`, qui ne s'execute qu'UNE
+    // SEULE FOIS : les lambdas qui y capturent une valeur ordinaire la
+    // figent a jamais a ce qu'elle valait a la toute premiere composition.
+    // C'est exactement ce qui causait un bug reel et critique : `entries`
+    // restait fige a la liste vide du demarrage, si bien que chaque scan
+    // recalculait la collection a partir de rien (une seule carte
+    // retrouvee au lieu de dix) et qu'aucun doublon n'etait jamais detecte.
+    // `rememberUpdatedState` cree un etat qui, lui, se met a jour a chaque
+    // recomposition et reste lisible correctement meme depuis une fermeture
+    // plus ancienne : c'est le remede pour toute valeur lue par
+    // `currentState` (plus bas) qui n'est pas deja un `mutableStateOf`.
+    // Toute nouvelle valeur ajoutee a `currentState` doit passer par le
+    // meme mecanisme, sous peine de reintroduire la meme classe de bug.
+    val currentEntries = rememberUpdatedState(entries)
+    val currentCondition = rememberUpdatedState(settings.condition)
 
     var finish by remember { mutableStateOf(settings.finish) }
     var language by remember { mutableStateOf(settings.language) }
@@ -221,15 +240,11 @@ private fun ScanScreenContent(
 
     // Seul point d'appel qui fait entrer une carte dans la collection, quel
     // que soit le chemin (scan direct, confirmation de doublon, choix de
-    // variante) : commitCard (dans core) decide seule entre ajout et
-    // incrementation, si bien qu'aucun appelant ici ne peut plus l'oublier.
+    // variante) : l'ecran ne calcule plus lui-meme la nouvelle liste, il
+    // demande a l'appelant (onCommit, tenu par MainActivity) d'appliquer la
+    // decision sur la collection courante et de dire ce qui s'est passe.
     fun commitAndNotify(card: Card?, rawCode: String) {
-        val result = commitCard(entries, card, rawCode, finish, language, condition, Instant.now().toString())
-        val nextEntries = when (result) {
-            is CommitResult.Added -> result.entries
-            is CommitResult.Incremented -> result.entries
-        }
-        onEntriesChange(nextEntries)
+        val result = onCommit(card, rawCode, finish, language, currentCondition.value)
         confirmAdditionFeedback()
         showAdditionMessage(formatAdditionMessage(result))
     }
@@ -247,7 +262,7 @@ private fun ScanScreenContent(
     fun submitManualCode() {
         val code = manualCode.trim()
         if (code.isEmpty()) return
-        handleEvent(scanMachine.decide(code, finish, language, condition, entries))
+        handleEvent(scanMachine.decide(code, finish, language, currentCondition.value, currentEntries.value))
         manualCode = ""
     }
 
@@ -299,8 +314,8 @@ private fun ScanScreenContent(
                                             ScanUiState(
                                                 finish = finish,
                                                 language = language,
-                                                condition = condition,
-                                                entries = entries,
+                                                condition = currentCondition.value,
+                                                entries = currentEntries.value,
                                                 paused = pendingEvent != null
                                             )
                                         },
@@ -340,7 +355,7 @@ private fun ScanScreenContent(
             FinishToggle(finish = finish, onFinishChange = { setFinish(it) })
             LanguageToggle(language = language, onLanguageChange = { setLanguage(it) })
             Spacer(modifier = Modifier.weight(1f))
-            Text(text = "${entries.sumOf { it.quantity }} carte(s)", color = Color.White)
+            Text(text = "${currentEntries.value.sumOf { it.quantity }} carte(s)", color = Color.White)
             Spacer(modifier = Modifier.width(8.dp))
             TextButton(
                 enabled = camera != null,

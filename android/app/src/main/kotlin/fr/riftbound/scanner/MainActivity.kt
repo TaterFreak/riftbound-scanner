@@ -19,10 +19,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import fr.riftbound.scanner.core.Card
+import fr.riftbound.scanner.core.CommitResult
 import fr.riftbound.scanner.core.Entry
+import fr.riftbound.scanner.core.commitCard
+import fr.riftbound.scanner.core.incrementEntry
+import fr.riftbound.scanner.core.removeEntry
+import fr.riftbound.scanner.core.updateEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,6 +83,49 @@ private fun RiftboundApp() {
         }
     }
 
+    // Point unique qui fait entrer une carte scannee dans la collection.
+    // `entries`, ici, est l'etat de snapshot detenu par ce composable (via
+    // `remember { mutableStateOf(...) }`) : le lire a l'interieur de cette
+    // fonction rend toujours la valeur courante, jamais une copie capturee
+    // au moment ou une camera ou un dialogue plus bas dans l'arbre a
+    // memorise une reference vers cette fonction. C'est ce qui protege
+    // structurellement contre le bug ou l'ecran de scan gardait une liste
+    // figee au demarrage : la source de verite n'est jamais transportee,
+    // seule la decision (carte, code, reglages) l'est.
+    fun commitScan(
+        card: Card?, rawCode: String, finish: String, language: String, condition: String
+    ): CommitResult {
+        val result = commitCard(entries, card, rawCode, finish, language, condition, Instant.now().toString())
+        val nextEntries = when (result) {
+            is CommitResult.Added -> result.entries
+            is CommitResult.Incremented -> result.entries
+        }
+        updateEntries(nextEntries)
+        return result
+    }
+
+    // Meme raisonnement pour les corrections faites depuis l'ecran
+    // Collection (incrementation manuelle, changement de langue ou d'etat,
+    // suppression) : chacune applique sa transformation sur la collection
+    // courante plutot que de recevoir une liste et d'en renvoyer une
+    // nouvelle calculee a partir d'une valeur qui aurait pu etre capturee
+    // plus tot.
+    fun incrementCollectionEntry(index: Int) {
+        updateEntries(incrementEntry(entries, index))
+    }
+
+    fun changeEntryLanguage(index: Int, value: String) {
+        updateEntries(updateEntry(entries, index, language = value))
+    }
+
+    fun changeEntryCondition(index: Int, value: String) {
+        updateEntries(updateEntry(entries, index, condition = value))
+    }
+
+    fun removeCollectionEntry(index: Int) {
+        updateEntries(removeEntry(entries, index))
+    }
+
     fun updateSettings(next: SessionSettings) {
         settings = next
         if (isLoaded) {
@@ -107,14 +157,17 @@ private fun RiftboundApp() {
             when (currentTab) {
                 AppTab.SCAN -> ScanScreen(
                     entries = entries,
-                    onEntriesChange = ::updateEntries,
+                    onCommit = ::commitScan,
                     settings = settings,
                     onSettingsChange = ::updateSettings
                 )
 
                 AppTab.COLLECTION -> CollectionScreen(
                     entries = entries,
-                    onEntriesChange = ::updateEntries,
+                    onIncrement = ::incrementCollectionEntry,
+                    onLanguageChange = ::changeEntryLanguage,
+                    onConditionChange = ::changeEntryCondition,
+                    onRemove = ::removeCollectionEntry,
                     collectionWasCorrupted = collectionWasCorrupted,
                     onCorruptionWarningDismissed = { collectionWasCorrupted = false }
                 )
