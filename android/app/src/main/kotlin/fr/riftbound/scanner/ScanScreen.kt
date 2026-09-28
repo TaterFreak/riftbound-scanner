@@ -265,7 +265,29 @@ private fun ScanScreenContent(
         showAdditionMessage(formatAdditionMessage(result))
     }
 
+    // Deuxieme garde de pause, sur le fil principal ou vit reellement
+    // `pendingEvent` : la premiere garde (dans CardAnalyzer, plus bas) ne
+    // suffit pas seule, car plusieurs evenements peuvent deja avoir ete
+    // postes ici via `mainExecutor.execute` avant qu'aucun d'eux n'ait
+    // encore ecrit `pendingEvent` - rien ne les serialise avant leur
+    // execution. Si une decision est deja en attente, cet evenement est
+    // ignore plutot que d'ecraser la fenetre ouverte ou d'ajouter une
+    // carte pendant que l'utilisateur n'a pas encore tranche.
+    //
+    // Aucune carte n'est pour autant perdue silencieusement : quel que
+    // soit son type, cet evenement vient de `ScanMachine.onFrame`, qui a
+    // deja fige son code dans le delai anti-relecture (`emitted` et
+    // `lastValidatedAt`) avant meme de le renvoyer - voir ScanMachine.kt.
+    // `reset()`, appele a la fermeture du dialogue en cours, efface la
+    // lecture en cours (pending/streak/emitted) mais jamais ce delai (voir
+    // le test "le delai survit a un reset explicite" dans
+    // ScanMachineTest.kt). Si la carte abandonnee ici est toujours devant
+    // l'objectif une fois le dialogue ferme, elle sera donc bien relue et
+    // validee de nouveau - simplement apres expiration du delai (1.5 s par
+    // defaut), jamais oubliee pour de bon.
     fun handleEvent(event: ScanEvent) {
+        if (pendingEvent != null) return
+
         when (event) {
             is ScanEvent.Accept -> commitAndNotify(event.card, event.code)
 
@@ -611,6 +633,24 @@ class CardAnalyzer(
         val inputImage = InputImage.fromMediaImage(mediaImage, image.imageInfo.rotationDegrees)
         textRecognizer.process(inputImage)
             .addOnSuccessListener { text ->
+                // La reconnaissance ML Kit est asynchrone : `state` a ete lu
+                // plus haut, potentiellement pendant qu'aucune fenetre de
+                // decision n'etait ouverte. Si une fenetre s'est ouverte
+                // entre-temps (une trame precedente vient d'emettre un
+                // evenement Doublon/Ambigu/Inconnu), ce resultat revient
+                // alors que l'utilisateur n'a pas encore tranche - et le
+                // controle en tete d'analyze() ne le voit pas, puisqu'il ne
+                // portait que sur l'etat au moment de la soumission de
+                // l'image, pas au moment de son retour. On reverifie donc
+                // ici, juste avant d'appeler machine.onFrame : si une
+                // decision est desormais en attente, cette trame est
+                // abandonnee SANS appeler onFrame, donc sans toucher au
+                // streak/emitted/delai de la machine pour ce code - cette
+                // trame n'aura simplement jamais existe pour elle. La carte,
+                // si elle est toujours devant l'objectif une fois la
+                // fenetre fermee, sera revalidee normalement des la
+                // prochaine paire de trames lisibles.
+                if (currentState().paused) return@addOnSuccessListener
                 val codeText = pickCodeText(text.textBlocks.map { it.text })
                 val event = machine.onFrame(
                     codeText, state.finish, state.language, state.condition, state.entries
