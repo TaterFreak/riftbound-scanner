@@ -58,4 +58,10 @@ dependencies {
     // n existe pas dans androidx.compose.material3 (Compose pur) : il
     // vient de la bibliotheque de vues Material Components.
     implementation("com.google.android.material:material:1.13.0")
+
+    implementation("androidx.camera:camera-camera2:1.6.2")
+    implementation("androidx.camera:camera-lifecycle:1.6.2")
+    implementation("androidx.camera:camera-view:1.6.2")
+    // Modele embarque : l'application lit du texte des la premiere ouverture, hors-ligne.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }
