@@ -66,6 +66,7 @@ import fr.riftbound.scanner.core.ScanEvent
 import fr.riftbound.scanner.core.ScanMachine
 import fr.riftbound.scanner.core.addScan
 import fr.riftbound.scanner.core.incrementEntry
+import fr.riftbound.scanner.core.pickCodeText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -494,9 +495,13 @@ private fun DecisionDialog(
 }
 
 /**
- * Passe chaque image a ML Kit, puis chaque bloc de texte reconnu a la machine de
- * scan. Le premier bloc qui produit un evenement gagne ; les suivants sont ignores
- * pour cette image. `paused` est vrai tant qu'un ecran de decision est ouvert.
+ * Passe chaque image a ML Kit, puis choisit parmi les blocs de texte reconnus
+ * celui qui porte un code de collection (`pickCodeText`, dans `core`) pour un
+ * unique appel a `onFrame` par image. Une carte produit plusieurs blocs (nom,
+ * regles, illustrateur, code) : appeler `onFrame` pour chacun d'eux rearmerait
+ * la machine a chaque fois qu'un bloc sans code est rencontre, et le code
+ * n'atteindrait jamais les deux lectures consecutives qui le valident.
+ * `paused` est vrai tant qu'un ecran de decision est ouvert.
  */
 class CardAnalyzer(
     private val machine: ScanMachine,
@@ -518,15 +523,11 @@ class CardAnalyzer(
         val inputImage = InputImage.fromMediaImage(mediaImage, image.imageInfo.rotationDegrees)
         textRecognizer.process(inputImage)
             .addOnSuccessListener { text ->
-                for (block in text.textBlocks) {
-                    val event = machine.onFrame(
-                        block.text, state.finish, state.language, state.condition, state.entries
-                    )
-                    if (event != null) {
-                        onEvent(event)
-                        break
-                    }
-                }
+                val codeText = pickCodeText(text.textBlocks.map { it.text })
+                val event = machine.onFrame(
+                    codeText, state.finish, state.language, state.condition, state.entries
+                )
+                if (event != null) onEvent(event)
             }
             // Fermer l'image quoi qu'il arrive : sans ce listener, le flux se fige.
             .addOnCompleteListener { image.close() }

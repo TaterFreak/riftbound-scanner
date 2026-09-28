@@ -126,3 +126,12 @@ fun parseCollectorCode(rawOcrText: String?): String? {
         compareByDescending<Candidate> { it.hasTotal }.thenByDescending { it.position }
     ).first().code
 }
+
+/**
+ * Choisit, parmi les blocs de texte reconnus sur une meme image, celui qui porte le
+ * code de collection. Une carte produit plusieurs blocs (nom, texte de regles,
+ * illustrateur, code) : n'en retenir qu'un seul evite qu'un bloc sans code ne
+ * rearme la machine de scan entre deux blocs qui, eux, portent le meme code.
+ */
+fun pickCodeText(blocks: List<String>): String? =
+    blocks.firstOrNull { parseCollectorCode(it) != null }

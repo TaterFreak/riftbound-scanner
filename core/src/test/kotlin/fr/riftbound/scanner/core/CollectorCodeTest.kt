@@ -106,4 +106,37 @@ class CollectorCodeTest {
         }
         assertNull(parseCollectorCode(null))
     }
+
+    @Test
+    fun `pickCodeText retient le seul bloc porteur d un code`() {
+        assertEquals("UNL-121-219", pickCodeText(listOf("Bewitching Spirit", "UNL-121-219")))
+    }
+
+    @Test
+    fun `pickCodeText renvoie null si aucun bloc n a de code`() {
+        assertNull(pickCodeText(listOf("Bewitching Spirit", "Illustration : Wild Blue Studios")))
+    }
+
+    @Test
+    fun `pickCodeText d une liste vide renvoie null`() {
+        assertNull(pickCodeText(emptyList()))
+    }
+
+    @Test
+    fun `pickCodeText trouve le code meme place en dernier bloc`() {
+        // Cas reel qui echouait : le nom, le texte de regles et l illustrateur
+        // arrivent avant le bloc du code de collection.
+        assertEquals(
+            "UNL-121-219",
+            pickCodeText(listOf("Bewitching Spirit", "Deal -2/-2 to a unit.", "Wild Blue Studios", "UNL-121-219"))
+        )
+    }
+
+    @Test
+    fun `pickCodeText n est pas piege par un texte de regles qui ressemble a un code`() {
+        assertEquals(
+            "UNL-121-219",
+            pickCodeText(listOf("Deal -2/-2 to a unit.", "UNL-121-219"))
+        )
+    }
 }

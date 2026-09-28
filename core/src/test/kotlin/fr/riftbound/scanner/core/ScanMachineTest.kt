@@ -86,6 +86,22 @@ class ScanMachineTest {
         assertNull(m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList()))
     }
 
+    @Test fun `une image par bloc plutot qu un onFrame par bloc laisse le code s accumuler`() {
+        // Bug reel : en appelant onFrame pour chaque bloc reconnu sur une image (nom,
+        // regles, illustrateur, code), un bloc sans code rearmait la machine avant que
+        // le code n ait pu s accumuler sur deux images : aucun evenement n etait jamais
+        // emis. La correction choisit un seul texte par image avec pickCodeText, puis
+        // appelle onFrame une unique fois avec ce texte.
+        val image1 = listOf("Bewitching Spirit", "Deal -2/-2 to a unit.", "Wild Blue Studios", "UNL-121-219")
+        val image2 = listOf("Bewitching Spirit", "Deal -2/-2 to a unit.", "Wild Blue Studios", "UNL-121-219")
+        val m = ScanMachine(catalog)
+        val events = listOf(image1, image2).mapNotNull { blocks ->
+            m.onFrame(pickCodeText(blocks), "normal", "en", "NM", emptyList())
+        }
+        assertEquals(1, events.size)
+        assertTrue(events[0] is ScanEvent.Accept)
+    }
+
     @Test fun `une exception levee par decide n empeche pas la trame suivante d emettre`() {
         // Bug reel vise : si `emitted` etait fige avant l'appel a `decide`, une
         // exception rendrait la carte invisible pour toujours tant qu'elle reste
