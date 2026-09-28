@@ -89,4 +89,58 @@ class EntriesTest {
         assertEquals("NM", before[0].condition)
         assertEquals(emptyList(), removeEntry(before, 0))
     }
+
+    // commitCard : point unique de decision pour toute carte choisie ou
+    // reconnue (scan direct, confirmation de doublon, choix de variante...).
+    // Elle rend l'incrementation d'un doublon impossible a oublier : c'est
+    // elle qui l'effectue, l'appelant n'a plus qu'a lire le resultat.
+    private fun commit(entries: List<Entry>, card: Card?, raw: String = "unl-121-219",
+                        finish: String = "normal", language: String = "en", condition: String = "NM") =
+        commitCard(entries, card, raw, finish, language, condition, "2026-09-27T10:00:00Z")
+
+    @Test fun `commitCard ajoute une carte inedite`() {
+        val result = commit(emptyList(), bewitching)
+        assertTrue(result is CommitResult.Added)
+        result as CommitResult.Added
+        assertEquals(0, result.index)
+        assertEquals(1, result.entries.size)
+        assertEquals(1, result.entries[0].quantity)
+        assertEquals("Bewitching Spirit", result.entries[0].name)
+    }
+
+    @Test fun `commitCard incremente reellement une carte deja presente`() {
+        // C'est le cas qui, dans ScanScreen, ne produisait avant correction
+        // aucun changement du tout : un candidat choisi qui correspondait a
+        // une ligne existante ne l'incrementait pas. commitCard verrouille
+        // ce comportement une bonne fois pour toutes.
+        val firstEntries = (commit(emptyList(), bewitching) as CommitResult.Added).entries
+        val result = commit(firstEntries, bewitching)
+        assertTrue(result is CommitResult.Incremented)
+        result as CommitResult.Incremented
+        assertEquals(2, result.quantity)
+        assertEquals(2, result.entries[result.index].quantity)
+        assertNotEquals(firstEntries, result.entries)
+    }
+
+    @Test fun `commitCard conserve une carte inconnue sous son code brut`() {
+        val result = commit(emptyList(), null, raw = "zzz-999-999")
+        assertTrue(result is CommitResult.Added)
+        result as CommitResult.Added
+        assertEquals("zzz-999-999", result.entries[result.index].rawCode)
+        assertEquals(true, result.entries[result.index].unknown)
+    }
+
+    @Test fun `commitCard distingue deux cartes differentes de meme code et meme finition`() {
+        // Bug reel deja couvert pour addScan : la version Metal ne doit pas
+        // etre absorbee par la ligne normale. Verifie ici a travers
+        // commitCard, le seul point d'entree desormais utilise par l'ecran.
+        val metal = bewitching.copy(riftcodexId = "metal-id", name = "Bewitching Spirit (Metal)")
+        val firstEntries = (commit(emptyList(), bewitching) as CommitResult.Added).entries
+        val result = commit(firstEntries, metal)
+        assertTrue(result is CommitResult.Added)
+        result as CommitResult.Added
+        assertEquals(2, result.entries.size)
+        assertEquals(1, result.entries[0].quantity)
+        assertEquals(1, result.entries[1].quantity)
+    }
 }

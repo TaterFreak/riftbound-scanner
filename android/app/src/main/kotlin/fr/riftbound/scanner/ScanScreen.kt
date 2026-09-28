@@ -64,12 +64,11 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import fr.riftbound.scanner.core.Card
 import fr.riftbound.scanner.core.Catalog
+import fr.riftbound.scanner.core.CommitResult
 import fr.riftbound.scanner.core.Entry
 import fr.riftbound.scanner.core.ScanEvent
 import fr.riftbound.scanner.core.ScanMachine
-import fr.riftbound.scanner.core.ScanOutcome
-import fr.riftbound.scanner.core.addScan
-import fr.riftbound.scanner.core.incrementEntry
+import fr.riftbound.scanner.core.commitCard
 import fr.riftbound.scanner.core.pickCodeText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -207,17 +206,37 @@ private fun ScanScreenContent(
         }
     }
 
+    fun formatAdditionMessage(result: CommitResult): String {
+        val entry = when (result) {
+            is CommitResult.Added -> result.entries[result.index]
+            is CommitResult.Incremented -> result.entries[result.index]
+        }
+        return when (result) {
+            is CommitResult.Added ->
+                if (entry.unknown) "Code ${entry.rawCode} conservé comme carte inconnue"
+                else "${entry.name} ajoutée"
+            is CommitResult.Incremented -> "${entry.name} — quantité portée à ${result.quantity}"
+        }
+    }
+
+    // Seul point d'appel qui fait entrer une carte dans la collection, quel
+    // que soit le chemin (scan direct, confirmation de doublon, choix de
+    // variante) : commitCard (dans core) decide seule entre ajout et
+    // incrementation, si bien qu'aucun appelant ici ne peut plus l'oublier.
+    fun commitAndNotify(card: Card?, rawCode: String) {
+        val result = commitCard(entries, card, rawCode, finish, language, condition, Instant.now().toString())
+        val nextEntries = when (result) {
+            is CommitResult.Added -> result.entries
+            is CommitResult.Incremented -> result.entries
+        }
+        onEntriesChange(nextEntries)
+        confirmAdditionFeedback()
+        showAdditionMessage(formatAdditionMessage(result))
+    }
+
     fun handleEvent(event: ScanEvent) {
         when (event) {
-            is ScanEvent.Accept -> {
-                val (nextEntries, _) = addScan(
-                    entries, event.card, event.code, finish, language, condition,
-                    Instant.now().toString()
-                )
-                onEntriesChange(nextEntries)
-                confirmAdditionFeedback()
-                showAdditionMessage("${event.card.name} ajoutée")
-            }
+            is ScanEvent.Accept -> commitAndNotify(event.card, event.code)
 
             is ScanEvent.Duplicate, is ScanEvent.Ambiguous, is ScanEvent.Unknown -> {
                 pendingEvent = event
@@ -372,47 +391,22 @@ private fun ScanScreenContent(
                 pendingEvent = null
                 scanMachine.reset()
             },
-            onConfirmDuplicate = { index ->
-                val nextEntries = incrementEntry(entries, index)
-                onEntriesChange(nextEntries)
-                confirmAdditionFeedback()
-                val card = entries[index]
-                showAdditionMessage("${card.name} — quantité portée à ${nextEntries[index].quantity}")
+            onConfirmDuplicate = { _ ->
+                // Le seul appelant de ce callback est le dialogue "Doublon"
+                // (voir DecisionDialog), affiche uniquement pour un
+                // ScanEvent.Duplicate : le cast est donc sur.
+                val duplicate = event as ScanEvent.Duplicate
+                commitAndNotify(duplicate.card, duplicate.code)
                 pendingEvent = null
                 scanMachine.reset()
             },
             onChooseCard = { code, card ->
-                // addScan ne fait jamais d'incrementation lui-meme (voir sa
-                // doc dans core) : si le candidat choisi correspond en fait a
-                // une ligne deja presente, il faut l'incrementer ici, sinon
-                // le message de quantite mentirait sur ce que voit
-                // l'utilisateur dans la liste.
-                val (addedEntries, outcome) = addScan(
-                    entries, card, code, finish, language, condition, Instant.now().toString()
-                )
-                val nextEntries = when (outcome) {
-                    is ScanOutcome.Added -> addedEntries
-                    is ScanOutcome.Duplicate -> incrementEntry(entries, outcome.index)
-                }
-                onEntriesChange(nextEntries)
-                confirmAdditionFeedback()
-                showAdditionMessage(
-                    when (outcome) {
-                        is ScanOutcome.Added -> "${card.name} ajoutée"
-                        is ScanOutcome.Duplicate ->
-                            "${card.name} — quantité portée à ${nextEntries[outcome.index].quantity}"
-                    }
-                )
+                commitAndNotify(card, code)
                 pendingEvent = null
                 scanMachine.reset()
             },
             onKeepUnknown = { code ->
-                val (nextEntries, _) = addScan(
-                    entries, null, code, finish, language, condition, Instant.now().toString()
-                )
-                onEntriesChange(nextEntries)
-                confirmAdditionFeedback()
-                showAdditionMessage("Code $code conservé comme carte inconnue")
+                commitAndNotify(null, code)
                 pendingEvent = null
                 scanMachine.reset()
             }

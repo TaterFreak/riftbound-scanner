@@ -83,6 +83,44 @@ fun addScan(
 fun incrementEntry(entries: List<Entry>, index: Int): List<Entry> =
     entries.mapIndexed { i, e -> if (i == index) e.copy(quantity = e.quantity + 1) else e }
 
+/**
+ * Ce qui s'est passe pour la carte commise : soit une nouvelle ligne
+ * (`Added`), soit l'incrementation d'une ligne existante (`Incremented`,
+ * qui porte la nouvelle quantite). Porter cette distinction dans le type de
+ * retour est ce qui rend l'oubli de l'incrementation impossible a exprimer
+ * pour l'appelant : il ne peut pas ignorer un cas qu'il doit forcement
+ * discriminer pour formuler son message.
+ */
+sealed interface CommitResult {
+    data class Added(val entries: List<Entry>, val index: Int) : CommitResult
+    data class Incremented(val entries: List<Entry>, val index: Int, val quantity: Int) : CommitResult
+}
+
+/**
+ * Point unique de decision : une carte choisie ou reconnue - par scan
+ * direct, confirmation de doublon ou choix d'une variante depuis un
+ * dialogue - doit entrer dans la collection, quelle qu'en soit la maniere.
+ * `addScan` seul ne suffit pas : il signale un doublon sans jamais
+ * l'incrementer lui-meme (voir sa doc), ce qui a deja ete a l'origine d'un
+ * choix de variante qui, une fois confirme, ne changeait rien du tout.
+ * `commitCard` ferme cette possibilite en effectuant lui-meme
+ * l'incrementation quand c'en est un, si bien qu'aucun appelant ne peut
+ * plus l'oublier.
+ */
+fun commitCard(
+    entries: List<Entry>, card: Card?, rawCode: String, finish: String,
+    language: String, condition: String, scannedAt: String
+): CommitResult {
+    val (afterAdd, outcome) = addScan(entries, card, rawCode, finish, language, condition, scannedAt)
+    return when (outcome) {
+        is ScanOutcome.Added -> CommitResult.Added(afterAdd, outcome.index)
+        is ScanOutcome.Duplicate -> {
+            val incremented = incrementEntry(entries, outcome.index)
+            CommitResult.Incremented(incremented, outcome.index, incremented[outcome.index].quantity)
+        }
+    }
+}
+
 fun updateEntry(
     entries: List<Entry>, index: Int,
     language: String? = null, condition: String? = null, quantity: Int? = null
