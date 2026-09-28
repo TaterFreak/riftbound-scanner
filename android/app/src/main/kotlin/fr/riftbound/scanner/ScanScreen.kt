@@ -37,6 +37,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +71,7 @@ import fr.riftbound.scanner.core.addScan
 import fr.riftbound.scanner.core.incrementEntry
 import fr.riftbound.scanner.core.pickCodeText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.concurrent.ExecutorService
@@ -188,6 +192,20 @@ private fun ScanScreenContent(
         toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 120)
     }
 
+    // Confirmation textuelle d'un ajout reussi : vibration et bip restent muets
+    // sur le nom de la carte, ce message comble ce manque sans jamais bloquer
+    // le scan. Un nouveau message coupe l'ancien plutot que de faire la queue,
+    // pour qu'une pile de cartes scannees coup sur coup reste lisible.
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    fun showAdditionMessage(message: String) {
+        coroutineScope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     fun handleEvent(event: ScanEvent) {
         when (event) {
             is ScanEvent.Accept -> {
@@ -197,6 +215,7 @@ private fun ScanScreenContent(
                 )
                 onEntriesChange(nextEntries)
                 confirmAdditionFeedback()
+                showAdditionMessage("${event.card.name} ajoutée")
             }
 
             is ScanEvent.Duplicate, is ScanEvent.Ambiguous, is ScanEvent.Unknown -> {
@@ -334,6 +353,15 @@ private fun ScanScreenContent(
             )
             Button(onClick = { submitManualCode() }) { Text("Ajouter") }
         }
+
+        // Place au-dessus de la saisie manuelle et sous les reglages, pour ne
+        // recouvrir ni l'un ni l'autre.
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 88.dp)
+        )
     }
 
     pendingEvent?.let { event ->
@@ -344,8 +372,11 @@ private fun ScanScreenContent(
                 scanMachine.reset()
             },
             onConfirmDuplicate = { index ->
-                onEntriesChange(incrementEntry(entries, index))
+                val nextEntries = incrementEntry(entries, index)
+                onEntriesChange(nextEntries)
                 confirmAdditionFeedback()
+                val card = entries[index]
+                showAdditionMessage("${card.name} — quantité portée à ${nextEntries[index].quantity}")
                 pendingEvent = null
                 scanMachine.reset()
             },
@@ -364,6 +395,7 @@ private fun ScanScreenContent(
                 )
                 onEntriesChange(nextEntries)
                 confirmAdditionFeedback()
+                showAdditionMessage("Code $code conservé comme carte inconnue")
                 pendingEvent = null
                 scanMachine.reset()
             }
