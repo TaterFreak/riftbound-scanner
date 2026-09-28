@@ -34,7 +34,10 @@ class ScanMachine(private val catalog: Catalog, private val confirmFrames: Int =
             is Resolution.Ambiguous -> ScanEvent.Ambiguous(code, resolved.cards)
             is Resolution.Unique -> {
                 val card = resolved.card
-                val key = listOf(card.riftcodexId, finish, language, condition).joinToString("|")
+                // `identityKey` est la meme fonction qu'utilise `entryKey` : si son
+                // calcul evolue, les deux appelants evoluent ensemble, sans divergence
+                // silencieuse (bug reel : une carte Metal absorbee par la ligne normale).
+                val key = identityKey(card.riftcodexId, finish, language, condition)
                 val existingIndex = entries.indexOfFirst { entryKey(it) == key }
                 if (existingIndex != -1) ScanEvent.Duplicate(code, card, existingIndex)
                 else ScanEvent.Accept(code, card)

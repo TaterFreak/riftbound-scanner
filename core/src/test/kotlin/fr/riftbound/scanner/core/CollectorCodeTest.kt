@@ -52,8 +52,8 @@ class CollectorCodeTest {
 
     @Test
     fun `accepte les separateurs rencontres a l impression`() {
-        for (brut in listOf("UNL 121 219", "UNL/121/219", "UNL·121·219", "UNL – 121 – 219")) {
-            assertEquals("unl-121-219", parseCollectorCode(brut), brut)
+        for (raw in listOf("UNL 121 219", "UNL/121/219", "UNL·121·219", "UNL – 121 – 219")) {
+            assertEquals("unl-121-219", parseCollectorCode(raw), raw)
         }
     }
 
@@ -101,8 +101,8 @@ class CollectorCodeTest {
 
     @Test
     fun `rejette ce qui n est pas un code`() {
-        for (brut in listOf("", "   ", "Bewitching Spirit", "219", "Illustration : Wild Blue Studios")) {
-            assertNull(parseCollectorCode(brut), brut)
+        for (raw in listOf("", "   ", "Bewitching Spirit", "219", "Illustration : Wild Blue Studios")) {
+            assertNull(parseCollectorCode(raw), raw)
         }
         assertNull(parseCollectorCode(null))
     }

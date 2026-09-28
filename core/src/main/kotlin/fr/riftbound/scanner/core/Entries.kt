@@ -28,12 +28,19 @@ sealed interface ScanOutcome {
 }
 
 /**
+ * Coeur du calcul de cle, partage par `entryKey` et par la machine de scan : une
+ * seule notion d'identite (carte + finition + langue + etat) sert partout, pour
+ * qu'une carte Metal ne puisse plus jamais etre absorbee par la ligne normale.
+ */
+internal fun identityKey(identity: String, finish: String, language: String, condition: String): String =
+    listOf(identity, finish, language, condition).joinToString("|")
+
+/**
  * La cle se fonde sur l'identifiant intrinseque de la carte, et non sur le code
  * imprime : seize codes designent deux cartes distinctes, qui ne doivent pas fusionner.
  */
 fun entryKey(entry: Entry): String =
-    listOf(entry.riftcodexId ?: entry.rawCode, entry.finish, entry.language, entry.condition)
-        .joinToString("|")
+    identityKey(entry.riftcodexId ?: entry.rawCode, entry.finish, entry.language, entry.condition)
 
 private fun entryFromScan(
     card: Card?, rawCode: String, finish: String,
