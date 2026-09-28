@@ -67,6 +67,7 @@ import fr.riftbound.scanner.core.Catalog
 import fr.riftbound.scanner.core.Entry
 import fr.riftbound.scanner.core.ScanEvent
 import fr.riftbound.scanner.core.ScanMachine
+import fr.riftbound.scanner.core.ScanOutcome
 import fr.riftbound.scanner.core.addScan
 import fr.riftbound.scanner.core.incrementEntry
 import fr.riftbound.scanner.core.pickCodeText
@@ -381,11 +382,27 @@ private fun ScanScreenContent(
                 scanMachine.reset()
             },
             onChooseCard = { code, card ->
-                val (nextEntries, _) = addScan(
+                // addScan ne fait jamais d'incrementation lui-meme (voir sa
+                // doc dans core) : si le candidat choisi correspond en fait a
+                // une ligne deja presente, il faut l'incrementer ici, sinon
+                // le message de quantite mentirait sur ce que voit
+                // l'utilisateur dans la liste.
+                val (addedEntries, outcome) = addScan(
                     entries, card, code, finish, language, condition, Instant.now().toString()
                 )
+                val nextEntries = when (outcome) {
+                    is ScanOutcome.Added -> addedEntries
+                    is ScanOutcome.Duplicate -> incrementEntry(entries, outcome.index)
+                }
                 onEntriesChange(nextEntries)
                 confirmAdditionFeedback()
+                showAdditionMessage(
+                    when (outcome) {
+                        is ScanOutcome.Added -> "${card.name} ajoutée"
+                        is ScanOutcome.Duplicate ->
+                            "${card.name} — quantité portée à ${nextEntries[outcome.index].quantity}"
+                    }
+                )
                 pendingEvent = null
                 scanMachine.reset()
             },
