@@ -69,6 +69,7 @@ import fr.riftbound.scanner.core.CommitResult
 import fr.riftbound.scanner.core.Entry
 import fr.riftbound.scanner.core.ScanEvent
 import fr.riftbound.scanner.core.ScanMachine
+import fr.riftbound.scanner.core.parsePrintedLanguage
 import fr.riftbound.scanner.core.pickCodeText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -81,6 +82,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Ecran de scan. La collection et les reglages de session (finition, langue,
  * etat par defaut) vivent au niveau de l'application : cet ecran les recoit
  * en parametre pour affichage et notifie ses changements de reglages.
+ *
+ * Le reglage de langue de session n'est qu'un repli : quand la ligne imprimee
+ * sur la carte porte elle-meme un code de langue lisible, c'est lui qui est
+ * enregistre, sans jamais modifier ce reglage collant (voir `CardAnalyzer` et
+ * `PendingDecision`, plus bas).
  *
  * Pour la collection, l'ecran ne renvoie plus de liste calculee : il
  * demande a l'appelant (`onCommit`) d'appliquer la decision sur la
@@ -187,7 +193,7 @@ private fun ScanScreenContent(
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    var pendingEvent by remember { mutableStateOf<ScanEvent?>(null) }
+    var pendingDecision by remember { mutableStateOf<PendingDecision?>(null) }
     var manualCode by remember { mutableStateOf("") }
     var torchOn by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
@@ -241,16 +247,20 @@ private fun ScanScreenContent(
         }
     }
 
-    fun formatAdditionMessage(result: CommitResult): String {
+    fun formatAdditionMessage(result: CommitResult, cardLanguage: String, languageDetected: Boolean): String {
         val entry = when (result) {
             is CommitResult.Added -> result.entries[result.index]
             is CommitResult.Incremented -> result.entries[result.index]
         }
+        // La langue detectee sur la carte (voir plus bas) prime sur le reglage
+        // de session : ce suffixe est le seul indice, volontairement discret,
+        // que l'utilisateur a de cette bascule automatique.
+        val suffix = if (languageDetected) " (langue ${cardLanguage.uppercase()} détectée)" else ""
         return when (result) {
             is CommitResult.Added ->
-                if (entry.unknown) "Code ${entry.rawCode} conservé comme carte inconnue"
-                else "${entry.name} ajoutée"
-            is CommitResult.Incremented -> "${entry.name} — quantité portée à ${result.quantity}"
+                if (entry.unknown) "Code ${entry.rawCode} conservé comme carte inconnue$suffix"
+                else "${entry.name} ajoutée$suffix"
+            is CommitResult.Incremented -> "${entry.name} — quantité portée à ${result.quantity}$suffix"
         }
     }
 
@@ -259,17 +269,23 @@ private fun ScanScreenContent(
     // variante) : l'ecran ne calcule plus lui-meme la nouvelle liste, il
     // demande a l'appelant (onCommit, tenu par MainActivity) d'appliquer la
     // decision sur la collection courante et de dire ce qui s'est passe.
-    fun commitAndNotify(card: Card?, rawCode: String) {
-        val result = onCommit(card, rawCode, finish, language, currentCondition.value)
+    //
+    // `cardLanguage` est la langue effective pour CETTE carte : celle lue sur
+    // la ligne imprimee si elle a ete reconnue, sinon le reglage de session
+    // (`language`). Ce n'est jamais forcement `language` lui-meme, d'ou le
+    // parametre explicite plutot qu'une lecture directe de la variable de
+    // session.
+    fun commitAndNotify(card: Card?, rawCode: String, cardLanguage: String, languageDetected: Boolean) {
+        val result = onCommit(card, rawCode, finish, cardLanguage, currentCondition.value)
         confirmAdditionFeedback()
-        showAdditionMessage(formatAdditionMessage(result))
+        showAdditionMessage(formatAdditionMessage(result, cardLanguage, languageDetected))
     }
 
     // Deuxieme garde de pause, sur le fil principal ou vit reellement
-    // `pendingEvent` : la premiere garde (dans CardAnalyzer, plus bas) ne
+    // `pendingDecision` : la premiere garde (dans CardAnalyzer, plus bas) ne
     // suffit pas seule, car plusieurs evenements peuvent deja avoir ete
     // postes ici via `mainExecutor.execute` avant qu'aucun d'eux n'ait
-    // encore ecrit `pendingEvent` - rien ne les serialise avant leur
+    // encore ecrit `pendingDecision` - rien ne les serialise avant leur
     // execution. Si une decision est deja en attente, cet evenement est
     // ignore plutot que d'ecraser la fenetre ouverte ou d'ajouter une
     // carte pendant que l'utilisateur n'a pas encore tranche.
@@ -285,14 +301,14 @@ private fun ScanScreenContent(
     // l'objectif une fois le dialogue ferme, elle sera donc bien relue et
     // validee de nouveau - simplement apres expiration du delai (1.5 s par
     // defaut), jamais oubliee pour de bon.
-    fun handleEvent(event: ScanEvent) {
-        if (pendingEvent != null) return
+    fun handleEvent(event: ScanEvent, cardLanguage: String, languageDetected: Boolean) {
+        if (pendingDecision != null) return
 
         when (event) {
-            is ScanEvent.Accept -> commitAndNotify(event.card, event.code)
+            is ScanEvent.Accept -> commitAndNotify(event.card, event.code, cardLanguage, languageDetected)
 
             is ScanEvent.Duplicate, is ScanEvent.Ambiguous, is ScanEvent.Unknown -> {
-                pendingEvent = event
+                pendingDecision = PendingDecision(event, cardLanguage, languageDetected)
             }
         }
     }
@@ -300,7 +316,16 @@ private fun ScanScreenContent(
     fun submitManualCode() {
         val code = manualCode.trim()
         if (code.isEmpty()) return
-        handleEvent(scanMachine.decide(code, finish, language, currentCondition.value, currentEntries.value))
+        // La saisie manuelle sert de repli pour une carte illisible, mais rien
+        // n'empeche l'utilisateur d'y coller la ligne complete : si elle porte
+        // une langue, elle prime la aussi sur le reglage de session.
+        val detectedLanguage = parsePrintedLanguage(code)
+        val cardLanguage = detectedLanguage ?: language
+        handleEvent(
+            scanMachine.decide(code, finish, cardLanguage, currentCondition.value, currentEntries.value),
+            cardLanguage,
+            detectedLanguage != null
+        )
         manualCode = ""
     }
 
@@ -351,10 +376,12 @@ private fun ScanScreenContent(
                                     language = language,
                                     condition = currentCondition.value,
                                     entries = currentEntries.value,
-                                    paused = pendingEvent != null
+                                    paused = pendingDecision != null
                                 )
                             },
-                            onEvent = { event -> mainExecutor.execute { handleEvent(event) } }
+                            onEvent = { event, cardLanguage, languageDetected ->
+                                mainExecutor.execute { handleEvent(event, cardLanguage, languageDetected) }
+                            }
                         )
 
                         val imageAnalysis = ImageAnalysis.Builder()
@@ -452,31 +479,40 @@ private fun ScanScreenContent(
         )
     }
 
-    pendingEvent?.let { event ->
+    pendingDecision?.let { decision ->
         DecisionDialog(
-            event = event,
+            event = decision.event,
             onDismiss = {
-                pendingEvent = null
+                pendingDecision = null
                 scanMachine.reset()
             },
             onConfirmDuplicate = { duplicate ->
-                commitAndNotify(duplicate.card, duplicate.code)
-                pendingEvent = null
+                commitAndNotify(duplicate.card, duplicate.code, decision.language, decision.languageDetected)
+                pendingDecision = null
                 scanMachine.reset()
             },
             onChooseCard = { code, card ->
-                commitAndNotify(card, code)
-                pendingEvent = null
+                commitAndNotify(card, code, decision.language, decision.languageDetected)
+                pendingDecision = null
                 scanMachine.reset()
             },
             onKeepUnknown = { code ->
-                commitAndNotify(null, code)
-                pendingEvent = null
+                commitAndNotify(null, code, decision.language, decision.languageDetected)
+                pendingDecision = null
                 scanMachine.reset()
             }
         )
     }
 }
+
+/**
+ * Decision en attente (Doublon, Variante ambigue, Code inconnu) avec la langue
+ * effective calculee au moment du scan - la carte a pu ensuite quitter le
+ * cadre, et le reglage de session peut avoir change entre-temps, donc cette
+ * langue ne peut pas etre relue depuis l'etat courant au moment ou
+ * l'utilisateur tranche enfin le dialogue.
+ */
+private data class PendingDecision(val event: ScanEvent, val language: String, val languageDetected: Boolean)
 
 @Composable
 private fun FinishToggle(finish: String, onFinishChange: (String) -> Unit) {
@@ -611,12 +647,14 @@ private fun DecisionDialog(
  * regles, illustrateur, code) : appeler `onFrame` pour chacun d'eux rearmerait
  * la machine a chaque fois qu'un bloc sans code est rencontre, et le code
  * n'atteindrait jamais les deux lectures consecutives qui le valident.
- * `paused` est vrai tant qu'un ecran de decision est ouvert.
+ * `paused` est vrai tant qu'un ecran de decision est ouvert. La langue
+ * imprimee sur ce meme bloc (`parsePrintedLanguage`, dans `core`) est lue au
+ * passage et transmise a `onEvent` : voir son parametre `cardLanguage`.
  */
 class CardAnalyzer(
     private val machine: ScanMachine,
     private val currentState: () -> ScanUiState,
-    private val onEvent: (ScanEvent) -> Unit
+    private val onEvent: (event: ScanEvent, cardLanguage: String, languageDetected: Boolean) -> Unit
 ) : ImageAnalysis.Analyzer {
 
     private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -652,10 +690,15 @@ class CardAnalyzer(
                 // prochaine paire de trames lisibles.
                 if (currentState().paused) return@addOnSuccessListener
                 val codeText = pickCodeText(text.textBlocks.map { it.text })
+                // La langue imprimee sur la carte, quand elle est lisible, prime
+                // sur le reglage de session collant : l'utilisateur n'a alors
+                // plus besoin de trier ses cartes par langue avant de scanner.
+                val detectedLanguage = parsePrintedLanguage(codeText)
+                val cardLanguage = detectedLanguage ?: state.language
                 val event = machine.onFrame(
-                    codeText, state.finish, state.language, state.condition, state.entries
+                    codeText, state.finish, cardLanguage, state.condition, state.entries
                 )
-                if (event != null) onEvent(event)
+                if (event != null) onEvent(event, cardLanguage, detectedLanguage != null)
             }
             // Fermer l'image quoi qu'il arrive : sans ce listener, le flux se fige.
             .addOnCompleteListener { image.close() }

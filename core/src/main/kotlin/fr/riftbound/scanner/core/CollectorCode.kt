@@ -55,21 +55,26 @@ private fun splitCore(core: String): Core? {
     return Core(prefix, stripLeadingZeros(digits), variant)
 }
 
-private data class Candidate(val code: String, val hasTotal: Boolean, val position: Int)
+/**
+ * `matchEnd` est la position, dans la chaine nettoyee, juste apres la fin de la
+ * correspondance (total inclus s'il y en a un). Elle sert a localiser ce qui suit
+ * immediatement le code - notamment le code de langue imprime a sa droite,
+ * voir `parsePrintedLanguage` - sans avoir a rechercher une seconde fois.
+ */
+private data class Candidate(val code: String, val hasTotal: Boolean, val position: Int, val matchEnd: Int)
 
 private val AFTER_SET = Regex("^([a-z0-9*]{1,6})(?:-([a-z0-9]{1,4}))?(?:$|-)")
 private val SHAPE = Regex("(?:^|-)([a-z0-9]{2,4})-([a-z0-9*]{1,6})(?:-([a-z0-9]{1,4}))?(?:-|$)")
 
-fun parseCollectorCode(rawOcrText: String?): String? {
-    if (rawOcrText == null) return null
-
-    val cleaned = rawOcrText.lowercase()
+private fun cleanOcrText(rawOcrText: String): String =
+    rawOcrText.lowercase()
         .replace(SEPARATORS, "-")
         .replace(DISALLOWED_CHARS, "")
         .replace(DASHES, "-")
         .trim('-')
-    if (cleaned.isEmpty()) return null
 
+/** Rassemble tous les codes plausibles trouves dans une chaine deja nettoyee. */
+private fun findCandidates(cleaned: String): List<Candidate> {
     val knownCandidates = mutableListOf<Candidate>()
 
     for (set in KNOWN_SETS) {
@@ -92,7 +97,10 @@ fun parseCollectorCode(rawOcrText: String?): String? {
                             val totalRaw = match.groupValues[2].takeIf { it.isNotEmpty() }?.let { toDigits(it) }
                             val total = totalRaw?.takeIf { t -> t.all { it.isDigit() } }
                             val head = set + "-" + core.prefix + core.number + core.variant
-                            knownCandidates.add(Candidate(if (total != null) "$head-$total" else head, total != null, searchPos))
+                            val matchEnd = afterIndex + 1 + match.range.last + 1
+                            knownCandidates.add(
+                                Candidate(if (total != null) "$head-$total" else head, total != null, searchPos, matchEnd)
+                            )
                         }
                     }
                 }
@@ -101,30 +109,70 @@ fun parseCollectorCode(rawOcrText: String?): String? {
         }
     }
 
+    if (knownCandidates.isNotEmpty()) return knownCandidates
+
     val unknownCandidates = mutableListOf<Candidate>()
-    if (knownCandidates.isEmpty()) {
-        for (match in SHAPE.findAll(cleaned)) {
-            val set = toLetters(match.groupValues[1])
-            if (!Regex("^[a-z]{2,4}$").matches(set)) continue
-            if (set in KNOWN_SETS) continue
-            val core = splitCore(match.groupValues[2]) ?: continue
-            // Un set inconnu n'est accepte qu'avec un numero d'au moins deux chiffres :
-            // c'est ce qui distingue « rad-012-200 » d'un « deal-2-2 » parasite.
-            if (core.number.length < 2) continue
-            val totalRaw = match.groupValues[3].takeIf { it.isNotEmpty() }?.let { toDigits(it) }
-            val total = totalRaw?.takeIf { t -> t.all { it.isDigit() } }
-            val head = set + "-" + core.prefix + core.number + core.variant
-            unknownCandidates.add(Candidate(if (total != null) "$head-$total" else head, total != null, match.range.first))
-        }
+    for (match in SHAPE.findAll(cleaned)) {
+        val set = toLetters(match.groupValues[1])
+        if (!Regex("^[a-z]{2,4}$").matches(set)) continue
+        if (set in KNOWN_SETS) continue
+        val core = splitCore(match.groupValues[2]) ?: continue
+        // Un set inconnu n'est accepte qu'avec un numero d'au moins deux chiffres :
+        // c'est ce qui distingue « rad-012-200 » d'un « deal-2-2 » parasite.
+        if (core.number.length < 2) continue
+        val totalRaw = match.groupValues[3].takeIf { it.isNotEmpty() }?.let { toDigits(it) }
+        val total = totalRaw?.takeIf { t -> t.all { it.isDigit() } }
+        val head = set + "-" + core.prefix + core.number + core.variant
+        unknownCandidates.add(
+            Candidate(if (total != null) "$head-$total" else head, total != null, match.range.first, match.range.last + 1)
+        )
     }
+    return unknownCandidates
+}
 
-    val allCandidates = if (knownCandidates.isNotEmpty()) knownCandidates else unknownCandidates
-    if (allCandidates.isEmpty()) return null
+/** Le candidat retenu : un code complet (avec total) prime ; a defaut, la correspondance la plus tardive. */
+private fun winningCandidate(cleaned: String): Candidate? =
+    findCandidates(cleaned).maxWithOrNull(
+        compareBy<Candidate> { it.hasTotal }.thenBy { it.position }
+    )
 
-    // Un code complet (avec total) prime ; a defaut, la correspondance la plus tardive.
-    return allCandidates.sortedWith(
-        compareByDescending<Candidate> { it.hasTotal }.thenByDescending { it.position }
-    ).first().code
+fun parseCollectorCode(rawOcrText: String?): String? {
+    if (rawOcrText == null) return null
+    val cleaned = cleanOcrText(rawOcrText)
+    if (cleaned.isEmpty()) return null
+    return winningCandidate(cleaned)?.code
+}
+
+/**
+ * Codes de langue imprimes au catalogue, format ISO 639-1 deux lettres. Liste
+ * couvrant les langues usuelles d'un jeu de cartes distribue mondialement
+ * (Riftbound est edite par Riot Games) ; a completer si une carte imprimee
+ * dans une langue absente d'ici est rencontree.
+ */
+private val KNOWN_LANGUAGES = setOf("en", "fr", "de", "es", "it", "pt", "ja", "ko", "zh", "ru", "pl", "tr")
+
+private val LANGUAGE_TOKEN = Regex("^([a-z]{2})(?:$|-)")
+
+/**
+ * Lit le code de langue imprime immediatement apres le code de collection, sur
+ * la meme ligne (ex. « UNL · 070/219 · FR » -> "fr"). Reutilise la localisation
+ * du code deja calculee par `winningCandidate` plutot que de rechercher une
+ * seconde fois : la langue n'est reconnue que collee au code, jamais un jeton
+ * de deux lettres trouve ailleurs sur la carte (texte de regles, illustrateur).
+ *
+ * Volontairement conservateur : un jeton absent de `KNOWN_LANGUAGES`, ou
+ * separe du code par autre chose, renvoie null plutot que de risquer une
+ * etiquette de langue erronee - l'utilisateur peut toujours la corriger a la
+ * main, alors qu'une erreur silencieuse passerait inapercue.
+ */
+fun parsePrintedLanguage(rawOcrText: String?): String? {
+    if (rawOcrText == null) return null
+    val cleaned = cleanOcrText(rawOcrText)
+    if (cleaned.isEmpty()) return null
+    val candidate = winningCandidate(cleaned) ?: return null
+    val remainder = cleaned.substring(candidate.matchEnd)
+    val token = LANGUAGE_TOKEN.find(remainder)?.groupValues?.get(1) ?: return null
+    return token.takeIf { it in KNOWN_LANGUAGES }
 }
 
 /**

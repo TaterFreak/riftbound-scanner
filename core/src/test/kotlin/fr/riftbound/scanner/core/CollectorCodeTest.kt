@@ -139,4 +139,40 @@ class CollectorCodeTest {
             pickCodeText(listOf("Deal -2/-2 to a unit.", "UNL-121-219"))
         )
     }
+
+    @Test
+    fun `parsePrintedLanguage lit le code de langue adjacent au code de collection`() {
+        for (raw in listOf("UNL · 070/219 · FR", "UNL 070/219 FR", "UNL-070-219-FR")) {
+            assertEquals("fr", parsePrintedLanguage(raw), raw)
+        }
+        assertEquals("en", parsePrintedLanguage("UNL · 070/219 · EN"))
+    }
+
+    @Test
+    fun `parsePrintedLanguage renvoie null en l absence de code de langue`() {
+        assertNull(parsePrintedLanguage("UNL · 070/219"))
+    }
+
+    @Test
+    fun `parsePrintedLanguage renvoie null pour un jeton de deux lettres qui n est pas une langue connue`() {
+        assertNull(parsePrintedLanguage("UNL · 070/219 · XX"))
+    }
+
+    @Test
+    fun `parsePrintedLanguage renvoie null en l absence de code de collection`() {
+        assertNull(parsePrintedLanguage("Bewitching Spirit"))
+    }
+
+    @Test
+    fun `parsePrintedLanguage rejette une entree nulle ou vide`() {
+        assertNull(parsePrintedLanguage(null))
+        assertNull(parsePrintedLanguage(""))
+    }
+
+    @Test
+    fun `parseCollectorCode n est pas perturbe par le code de langue qui suit`() {
+        // Non-regression : la ligne complete porte desormais aussi la langue,
+        // la lecture du code de collection doit continuer d ignorer ce jeton.
+        assertEquals("unl-70-219", parseCollectorCode("UNL · 070/219 · FR"))
+    }
 }
