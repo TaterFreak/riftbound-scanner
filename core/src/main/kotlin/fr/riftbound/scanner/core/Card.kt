@@ -53,13 +53,27 @@ class Catalog(val cards: List<Card>) {
         return index[cle] ?: emptyList()
     }
 
-    /** Les cartes dont le code est le plus proche, pour l'ecran de lecture douteuse. */
+    /**
+     * Les cartes dont le code est le plus proche, pour l'ecran de lecture douteuse.
+     *
+     * `code` nul : durcissement volontaire par rapport a l'implementation JavaScript
+     * d'origine, qui levait une TypeError sur une entree nulle. Ici, aucune exception :
+     * liste vide, conformement a la regle produit « ne jamais perdre un scan ». (Une
+     * chaine vide n'emprunte pas cette branche mais aboutit aussi a une liste vide :
+     * sa distance a toute cle du catalogue depasse 2 et est filtree plus bas.)
+     */
     fun candidatesFor(code: String?, limit: Int = 5): List<Card> {
         val cible = canonicalCode(code) ?: return emptyList()
         val cibleNum = numeroDe(cible)
         return index.keys
             .map { cle -> Triple(cle, distance(cible, cle), kotlin.math.abs(numeroDe(cle) - cibleNum)) }
             .filter { it.second in 1..2 }
+            // Le troisieme critere (la cle elle-meme) n'a aucune signification metier :
+            // il ne sert qu'a rendre l'ordre stable et reproductible quand deux cles sont
+            // a egalite de distance et de proximite numerique (ex. un suffixe de variante
+            // '*' face a 'a'). La comparaison ordinale (String.compareTo) est preferee a
+            // une comparaison sensible a la locale (type localeCompare) precisement parce
+            // qu'elle est deterministe et independante de la machine qui l'execute.
             .sortedWith(compareBy({ it.second }, { it.third }, { it.first }))
             .take(limit)
             .flatMap { index[it.first].orEmpty() }

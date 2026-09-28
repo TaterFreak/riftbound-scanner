@@ -92,4 +92,34 @@ class CatalogTest {
     fun `candidatesFor ne propose rien au-dela de la distance deux`() {
         assertEquals(emptyList(), catalogue.candidatesFor("abc-999-111"))
     }
+
+    @Test
+    fun `candidatesFor renvoie une liste vide pour une entree nulle ou vide`() {
+        // Durcissement assume par rapport a l'implementation JavaScript d'origine, qui
+        // levait une TypeError sur une entree nulle : ici, jamais d'exception.
+        assertEquals(emptyList(), catalogue.candidatesFor(null))
+        assertEquals(emptyList(), catalogue.candidatesFor(""))
+    }
+
+    @Test
+    fun `candidatesFor depart les ex aequo par comparaison ordinale (cas fige)`() {
+        // Deux cartes dont la cle ne differe que par un suffixe de variante : meme
+        // distance d'edition a la cible (1, par insertion) et meme numero (12), donc
+        // a egalite sur les deux premiers criteres. Seule la comparaison ordinale des
+        // cles les depart : '*' (0x2A) precede 'a' (0x61), la carte a suffixe '*' doit
+        // donc sortir en tete. Ordre calcule a la main avant d'etre fige ici.
+        val carteEtoile = Card(
+            code = "abc-12*-200", riftcodexId = "r1", tcgplayerId = null,
+            name = "Carte etoile", set = "abc", setLabel = "Abc", number = 12,
+            rarity = "Commune", type = "Unite", domain = emptyList()
+        )
+        val carteA = Card(
+            code = "abc-12a-200", riftcodexId = "r2", tcgplayerId = null,
+            name = "Carte a", set = "abc", setLabel = "Abc", number = 12,
+            rarity = "Commune", type = "Unite", domain = emptyList()
+        )
+        val catalogueFige = Catalog(listOf(carteA, carteEtoile))
+
+        assertEquals(listOf(carteEtoile, carteA), catalogueFige.candidatesFor("abc-12-200"))
+    }
 }
