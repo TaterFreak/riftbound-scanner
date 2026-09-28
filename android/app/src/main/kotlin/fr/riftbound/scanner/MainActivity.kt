@@ -3,6 +3,9 @@ package fr.riftbound.scanner
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -19,6 +22,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import fr.riftbound.scanner.core.Card
 import fr.riftbound.scanner.core.CommitResult
 import fr.riftbound.scanner.core.Entry
@@ -29,6 +33,7 @@ import fr.riftbound.scanner.core.updateEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.time.Instant
 
 class MainActivity : ComponentActivity() {
@@ -67,6 +72,12 @@ private fun RiftboundApp() {
     var settings by remember { mutableStateOf(SessionSettings()) }
     var collectionWasCorrupted by remember { mutableStateOf(false) }
     var isLoaded by remember { mutableStateOf(false) }
+    // Vrai des que la derniere sauvegarde a echoue (ecriture ou renommage) :
+    // reste vrai tant qu'aucune sauvegarde suivante n'a reussi, pour que
+    // l'utilisateur sache que ce qu'il voit a l'ecran n'est peut-etre plus
+    // persiste - la regle du produit est de ne jamais perdre un scan en
+    // silence.
+    var saveFailed by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val loadedEntries = withContext(Dispatchers.IO) { store.load() }
@@ -79,7 +90,20 @@ private fun RiftboundApp() {
     fun updateEntries(next: List<Entry>) {
         entries = next
         if (isLoaded) {
-            coroutineScope.launch(Dispatchers.IO) { store.save(next) }
+            // Rattrapee ici, jamais laissee remonter : `coroutineScope` n'est
+            // pas supervise, une exception non rattrapee dans une coroutine
+            // qu'il lance annule tout son Job et empecherait silencieusement
+            // toute sauvegarde ulterieure pour le reste de la session, alors
+            // que l'ecran continuerait d'afficher une collection qui n'est
+            // plus persistee.
+            coroutineScope.launch {
+                try {
+                    store.save(next)
+                    saveFailed = false
+                } catch (e: IOException) {
+                    saveFailed = true
+                }
+            }
         }
     }
 
@@ -154,23 +178,39 @@ private fun RiftboundApp() {
         }
     ) { padding ->
         Surface(modifier = Modifier.padding(padding)) {
-            when (currentTab) {
-                AppTab.SCAN -> ScanScreen(
-                    entries = entries,
-                    onCommit = ::commitScan,
-                    settings = settings,
-                    onSettingsChange = ::updateSettings
-                )
+            Column {
+                if (saveFailed) {
+                    Text(
+                        text = "Echec de l'enregistrement de la collection : les derniers " +
+                            "changements ne sont peut-etre pas sauvegardes.",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+                // `weight(1f)` : sans lui, un enfant `fillMaxSize()` de cette
+                // Column reclame la hauteur totale disponible sans tenir
+                // compte de la banniere au-dessus, et deborde en bas de
+                // l'ecran des que `saveFailed` est vrai.
+                Box(modifier = Modifier.weight(1f)) {
+                    when (currentTab) {
+                        AppTab.SCAN -> ScanScreen(
+                            entries = entries,
+                            onCommit = ::commitScan,
+                            settings = settings,
+                            onSettingsChange = ::updateSettings
+                        )
 
-                AppTab.COLLECTION -> CollectionScreen(
-                    entries = entries,
-                    onIncrement = ::incrementCollectionEntry,
-                    onLanguageChange = ::changeEntryLanguage,
-                    onConditionChange = ::changeEntryCondition,
-                    onRemove = ::removeCollectionEntry,
-                    collectionWasCorrupted = collectionWasCorrupted,
-                    onCorruptionWarningDismissed = { collectionWasCorrupted = false }
-                )
+                        AppTab.COLLECTION -> CollectionScreen(
+                            entries = entries,
+                            onIncrement = ::incrementCollectionEntry,
+                            onLanguageChange = ::changeEntryLanguage,
+                            onConditionChange = ::changeEntryCondition,
+                            onRemove = ::removeCollectionEntry,
+                            collectionWasCorrupted = collectionWasCorrupted,
+                            onCorruptionWarningDismissed = { collectionWasCorrupted = false }
+                        )
+                    }
+                }
             }
         }
     }

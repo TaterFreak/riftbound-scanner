@@ -26,13 +26,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import fr.riftbound.scanner.core.Entry
+import fr.riftbound.scanner.core.entryKey
 import fr.riftbound.scanner.core.toCsv
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.LocalDate
 
@@ -63,18 +67,24 @@ fun CollectionScreen(
 ) {
     val context = LocalContext.current
     var exportFailed by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        try {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(toCsv(entries).toByteArray(Charsets.UTF_8))
+        // Ecriture deportee sur un dispatcher d'entrees-sorties : le fil
+        // principal ne doit pas bloquer sur un acces disque, par coherence
+        // avec le soin pris ailleurs (persistance de la collection).
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    output.write(toCsv(entries).toByteArray(Charsets.UTF_8))
+                }
+                exportFailed = false
+            } catch (e: IOException) {
+                exportFailed = true
             }
-            exportFailed = false
-        } catch (e: IOException) {
-            exportFailed = true
         }
     }
 
@@ -114,7 +124,10 @@ fun CollectionScreen(
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(entries.size) { index ->
+                // Cle stable par carte (et non par position) : sans elle, une
+                // suppression au milieu de la liste decale les etats locaux
+                // (par ex. un menu deroulant ouvert) sur la mauvaise ligne.
+                items(entries.size, key = { index -> entryKey(entries[index]) }) { index ->
                     val entry = entries[index]
                     CollectionRow(
                         entry = entry,

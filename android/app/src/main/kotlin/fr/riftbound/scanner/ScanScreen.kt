@@ -75,6 +75,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Ecran de scan. La collection et les reglages de session (finition, langue,
@@ -194,10 +195,25 @@ private fun ScanScreenContent(
 
     var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var analysisExecutorRef by remember { mutableStateOf<ExecutorService?>(null) }
+    var cardAnalyzerRef by remember { mutableStateOf<CardAnalyzer?>(null) }
+    // Vrai des que l'ecran de scan est quitte. `cameraProviderRef` et
+    // `analysisExecutorRef` ne sont assignes que dans le callback
+    // asynchrone de `cameraProviderFuture`, plus bas : si l'utilisateur
+    // change d'onglet avant que ce callback ne s'execute, cet `onDispose`
+    // s'execute alors qu'ils sont encore nuls et ne delie rien. Le
+    // callback s'execute ensuite quand meme et lie la camera au cycle de
+    // vie de l'Activity - qui reste RESUMED quel que soit l'onglet affiche
+    // - laissant un analyseur actif capable d'ajouter des cartes pendant
+    // que l'utilisateur regarde un autre ecran. Ce drapeau, consulte par
+    // le callback avant de lier quoi que ce soit, ferme cette fenetre quel
+    // que soit l'ordre d'execution des deux.
+    val disposed = remember { AtomicBoolean(false) }
     DisposableEffect(Unit) {
         onDispose {
+            disposed.set(true)
             cameraProviderRef?.unbindAll()
             analysisExecutorRef?.shutdown()
+            cardAnalyzerRef?.close()
         }
     }
 
@@ -292,45 +308,60 @@ private fun ScanScreenContent(
 
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(viewContext)
                     cameraProviderFuture.addListener({
+                        // L'ecran a peut-etre deja ete quitte pendant que cette
+                        // future s'executait : ne rien lier dans ce cas (voir
+                        // le commentaire sur `disposed`, plus haut).
+                        if (disposed.get()) return@addListener
+
                         val cameraProvider = cameraProviderFuture.get()
-                        cameraProviderRef = cameraProvider
 
                         val preview = Preview.Builder().build().also {
                             it.setSurfaceProvider(newPreviewView.surfaceProvider)
                         }
 
                         val analysisExecutor = Executors.newSingleThreadExecutor()
-                        analysisExecutorRef = analysisExecutor
+
+                        val analyzer = CardAnalyzer(
+                            machine = scanMachine,
+                            currentState = {
+                                ScanUiState(
+                                    finish = finish,
+                                    language = language,
+                                    condition = currentCondition.value,
+                                    entries = currentEntries.value,
+                                    paused = pendingEvent != null
+                                )
+                            },
+                            onEvent = { event -> mainExecutor.execute { handleEvent(event) } }
+                        )
 
                         val imageAnalysis = ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
-                            .also {
-                                it.setAnalyzer(
-                                    analysisExecutor,
-                                    CardAnalyzer(
-                                        machine = scanMachine,
-                                        currentState = {
-                                            ScanUiState(
-                                                finish = finish,
-                                                language = language,
-                                                condition = currentCondition.value,
-                                                entries = currentEntries.value,
-                                                paused = pendingEvent != null
-                                            )
-                                        },
-                                        onEvent = { event -> mainExecutor.execute { handleEvent(event) } }
-                                    )
-                                )
-                            }
+                            .also { it.setAnalyzer(analysisExecutor, analyzer) }
 
                         cameraProvider.unbindAll()
-                        camera = cameraProvider.bindToLifecycle(
+                        val boundCamera = cameraProvider.bindToLifecycle(
                             lifecycleOwner,
                             CameraSelector.DEFAULT_BACK_CAMERA,
                             preview,
                             imageAnalysis
                         )
+
+                        if (disposed.get()) {
+                            // Dispose survenue pendant qu'on liait : delier
+                            // immediatement plutot que de laisser tourner un
+                            // analyseur actif que plus personne ne surveille.
+                            cameraProvider.unbindAll()
+                            analysisExecutor.shutdown()
+                            analyzer.close()
+                            return@addListener
+                        }
+
+                        cameraProviderRef = cameraProvider
+                        analysisExecutorRef = analysisExecutor
+                        cardAnalyzerRef = analyzer
+                        camera = boundCamera
                     }, mainExecutor)
 
                     newPreviewView
@@ -406,11 +437,7 @@ private fun ScanScreenContent(
                 pendingEvent = null
                 scanMachine.reset()
             },
-            onConfirmDuplicate = { _ ->
-                // Le seul appelant de ce callback est le dialogue "Doublon"
-                // (voir DecisionDialog), affiche uniquement pour un
-                // ScanEvent.Duplicate : le cast est donc sur.
-                val duplicate = event as ScanEvent.Duplicate
+            onConfirmDuplicate = { duplicate ->
                 commitAndNotify(duplicate.card, duplicate.code)
                 pendingEvent = null
                 scanMachine.reset()
@@ -485,7 +512,7 @@ private fun PermissionRefusee(wasDenied: Boolean, onRetry: () -> Unit) {
 private fun DecisionDialog(
     event: ScanEvent,
     onDismiss: () -> Unit,
-    onConfirmDuplicate: (Int) -> Unit,
+    onConfirmDuplicate: (ScanEvent.Duplicate) -> Unit,
     onChooseCard: (String, Card) -> Unit,
     onKeepUnknown: (String) -> Unit
 ) {
@@ -498,7 +525,10 @@ private fun DecisionDialog(
             title = { Text("Doublon") },
             text = { Text("« ${event.card.name} » est deja dans la collection. Incrementer la quantite ?") },
             confirmButton = {
-                TextButton(onClick = { onConfirmDuplicate(event.index) }) { Text("Incrementer") }
+                // `event` est deja affine en `ScanEvent.Duplicate` par ce
+                // `when` : le transmettre directement evite tout cast a
+                // l'appelant.
+                TextButton(onClick = { onConfirmDuplicate(event) }) { Text("Incrementer") }
             },
             dismissButton = {
                 TextButton(onClick = onDismiss) { Text("Ignorer") }
@@ -589,6 +619,17 @@ class CardAnalyzer(
             }
             // Fermer l'image quoi qu'il arrive : sans ce listener, le flux se fige.
             .addOnCompleteListener { image.close() }
+    }
+
+    /**
+     * Libere le client ML Kit. A appeler quand l'ecran de scan est quitte : la
+     * navigation entre onglets recree cette classe a chaque retour sur
+     * l'onglet Scanner (voir `AndroidView.factory`, execute une seule fois
+     * par instance d'ecran), et sans cet appel, chaque aller-retour laisse un
+     * nouveau client ML Kit ouvert sans jamais fermer les precedents.
+     */
+    fun close() {
+        textRecognizer.close()
     }
 }
 

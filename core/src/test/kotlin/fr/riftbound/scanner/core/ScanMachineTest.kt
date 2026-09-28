@@ -34,8 +34,11 @@ class ScanMachineTest {
     }
 
     @Test fun `une trame illisible rearme la machine`() {
+        // Delai explicitement nul : ce test date d'avant l'introduction du
+        // delai par code et ne doit pas en dependre pour garder son sens
+        // (voir aussi le test dedie plus bas qui verifie ce meme delai nul).
         val frames = listOf("UNL-121-219", "UNL-121-219", "", "", "UNL-121-219", "UNL-121-219")
-        assertEquals(2, replay(ScanMachine(catalog), frames).size)
+        assertEquals(2, replay(ScanMachine(catalog, cooldownMs = 0), frames).size)
     }
 
     @Test fun `deux cartes differentes enchainees sont toutes deux detectees`() {
@@ -115,5 +118,83 @@ class ScanMachineTest {
         }
         val e = m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
         assertTrue(e is ScanEvent.Accept)
+    }
+
+    // Delai par code : sans lui, une carte qu'on retire lentement du cadre
+    // produit une image intermediaire illisible qui rearme la machine
+    // (reset()), et la carte, encore partiellement visible, est relue et
+    // validee une seconde fois. Le delai ignore un code deja valide pendant
+    // `cooldownMs`, mais n'affecte jamais un code different : la cadence de
+    // lecture d'une pile de cartes distinctes reste intacte.
+
+    @Test fun `un code valide n est pas repris pendant son delai, meme apres une trame illisible`() {
+        var currentTime = 0L
+        val m = ScanMachine(catalog, cooldownMs = 1500, now = { currentTime })
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        val first = m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        assertTrue(first is ScanEvent.Accept)
+
+        // La carte quitte le cadre : une trame illisible rearme pending/streak/emitted.
+        m.onFrame("", "normal", "en", "NM", emptyList())
+        // A peine 500 ms plus tard, bien avant l'expiration du delai de 1500 ms.
+        currentTime += 500
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        val second = m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        assertNull(second)
+    }
+
+    @Test fun `un code valide est de nouveau accepte une fois le delai ecoule`() {
+        var currentTime = 0L
+        val m = ScanMachine(catalog, cooldownMs = 1500, now = { currentTime })
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+
+        m.onFrame("", "normal", "en", "NM", emptyList())
+        currentTime += 1500 // delai ecoule
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        val second = m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        assertTrue(second is ScanEvent.Accept)
+    }
+
+    @Test fun `un code different n est jamais soumis au delai d un autre code`() {
+        var currentTime = 0L
+        val m = ScanMachine(catalog, cooldownMs = 1500, now = { currentTime })
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+
+        // Meme instant, code different : le delai du premier ne le concerne pas.
+        m.onFrame("OPP-259-298", "normal", "en", "NM", emptyList())
+        val second = m.onFrame("OPP-259-298", "normal", "en", "NM", emptyList())
+        assertTrue(second is ScanEvent.Accept)
+    }
+
+    @Test fun `le delai survit a un reset explicite`() {
+        // Choix assume : reset() efface la lecture en cours (pending, streak,
+        // emitted) mais jamais le delai par code. reset() est declenche par
+        // chaque trame illisible pendant qu'une carte quitte le cadre : si le
+        // delai en dependait, il serait annule au moment precis ou il doit
+        // agir - ce serait exactement le bug que ce delai corrige. reset()
+        // est aussi appele quand l'utilisateur ferme un dialogue de decision
+        // (Doublon, Variante ambigue, Code inconnu) : par ce meme choix, un
+        // rescan immediat du meme code juste apres reste donc ignore jusqu'a
+        // expiration du delai. Cote produit, un rescan aussi rapproche est
+        // plus probablement un residu de cadrage (la carte reste devant
+        // l'objectif pendant que le dialogue etait ouvert) qu'une nouvelle
+        // intention deliberee.
+        var currentTime = 0L
+        val m = ScanMachine(catalog, cooldownMs = 1500, now = { currentTime })
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+
+        m.reset() // simule la fermeture d'un dialogue de decision
+        currentTime += 500 // bien avant l'expiration du delai
+        m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        val second = m.onFrame("UNL-121-219", "normal", "en", "NM", emptyList())
+        assertNull(second)
+    }
+
+    @Test fun `un delai de zero retrouve le comportement d avant l introduction du delai`() {
+        val frames = listOf("UNL-121-219", "UNL-121-219", "", "", "UNL-121-219", "UNL-121-219")
+        assertEquals(2, replay(ScanMachine(catalog, cooldownMs = 0), frames).size)
     }
 }

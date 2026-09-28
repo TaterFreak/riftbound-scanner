@@ -2,14 +2,18 @@ package fr.riftbound.scanner
 
 import android.content.Context
 import fr.riftbound.scanner.core.Entry
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.Executors
 
 private const val COLLECTION_FILE_NAME = "collection.json"
 private const val COLLECTION_TMP_FILE_NAME = "collection.json.tmp"
-private const val COLLECTION_CORRUPTED_FILE_NAME = "collection.corrompue.json"
+private const val COLLECTION_CORRUPTED_FILE_PREFIX = "collection.corrompue."
+private const val COLLECTION_CORRUPTED_FILE_SUFFIX = ".json"
 
 private const val PREFS_NAME = "reglages"
 private const val PREF_FINISH = "finish"
@@ -44,6 +48,18 @@ data class SessionSettings(
  */
 class CollectionStore(private val context: Context) {
 
+    // Dispatcher mono-thread dedie a la persistance de la collection.
+    // L'utilisateur scanne une pile de cartes en rafale : chaque scan
+    // declenche sa propre sauvegarde, et toutes ecrivent vers le meme
+    // fichier temporaire (nom constant). Lancees chacune sur le pool
+    // partage de Dispatchers.IO, deux sauvegardes rapprochees peuvent
+    // s'entrelacer, et rien ne garantit alors que le dernier renommage
+    // soit celui de la version la plus recente : une collection ancienne
+    // peut ecraser la nouvelle en silence. Un thread unique execute les
+    // sauvegardes dans l'ordre exact ou elles sont soumises : ni
+    // entrelacement, ni inversion possible.
+    private val persistenceDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+
     /** Vrai si le dernier appel a [load] a du ecarter un fichier illisible. */
     var lastLoadWasCorrupted: Boolean = false
         private set
@@ -61,7 +77,7 @@ class CollectionStore(private val context: Context) {
         }
     }
 
-    fun save(entries: List<Entry>) {
+    suspend fun save(entries: List<Entry>) = withContext(persistenceDispatcher) {
         val file = File(context.filesDir, COLLECTION_FILE_NAME)
         val tmp = File(context.filesDir, COLLECTION_TMP_FILE_NAME)
         tmp.writeText(serializeEntries(entries))
@@ -93,9 +109,15 @@ class CollectionStore(private val context: Context) {
             .apply()
     }
 
+    // Un nom distinct par mise en quarantaine (horodatage en nanosecondes,
+    // monotone et pratiquement jamais en collision) : un nom constant
+    // effacerait la quarantaine precedente a chaque nouveau fichier
+    // corrompu, alors qu'elle etait peut-etre encore recuperable.
     private fun quarantineCorruptedFile(file: File) {
-        val quarantined = File(context.filesDir, COLLECTION_CORRUPTED_FILE_NAME)
-        if (quarantined.exists()) quarantined.delete()
+        val quarantined = File(
+            context.filesDir,
+            "$COLLECTION_CORRUPTED_FILE_PREFIX${System.nanoTime()}$COLLECTION_CORRUPTED_FILE_SUFFIX"
+        )
         file.renameTo(quarantined)
     }
 }
