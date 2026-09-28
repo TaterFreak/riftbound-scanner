@@ -72,11 +72,19 @@ import java.time.Instant
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/** Etat par defaut sans controle dedie sur cet ecran : ajuste plus tard depuis la collection. */
-private const val DEFAULT_CONDITION = "NM"
-
+/**
+ * Ecran de scan. La collection et les reglages de session (finition, langue,
+ * etat par defaut) vivent au niveau de l'application : cet ecran les recoit
+ * en parametre et notifie ses changements, pour que la collection scannee ici
+ * soit aussi celle affichee et persistee depuis l'ecran Collection.
+ */
 @Composable
-fun ScanScreen() {
+fun ScanScreen(
+    entries: List<Entry>,
+    onEntriesChange: (List<Entry>) -> Unit,
+    settings: SessionSettings,
+    onSettingsChange: (SessionSettings) -> Unit
+) {
     val context = LocalContext.current
     var catalog by remember { mutableStateOf<Catalog?>(null) }
 
@@ -92,11 +100,23 @@ fun ScanScreen() {
         return
     }
 
-    ScanScreenContent(catalog = loadedCatalog)
+    ScanScreenContent(
+        catalog = loadedCatalog,
+        entries = entries,
+        onEntriesChange = onEntriesChange,
+        settings = settings,
+        onSettingsChange = onSettingsChange
+    )
 }
 
 @Composable
-private fun ScanScreenContent(catalog: Catalog) {
+private fun ScanScreenContent(
+    catalog: Catalog,
+    entries: List<Entry>,
+    onEntriesChange: (List<Entry>) -> Unit,
+    settings: SessionSettings,
+    onSettingsChange: (SessionSettings) -> Unit
+) {
     val context = LocalContext.current
     val view = LocalView.current
     // ComponentActivity implemente LifecycleOwner : c'est le cycle de vie auquel
@@ -105,10 +125,23 @@ private fun ScanScreenContent(catalog: Catalog) {
     val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
 
     val scanMachine = remember(catalog) { ScanMachine(catalog) }
-    var entries by remember { mutableStateOf(listOf<Entry>()) }
 
-    var finish by remember { mutableStateOf("normal") }
-    var language by remember { mutableStateOf("en") }
+    // Etat par defaut applique a une nouvelle carte scannee : pas de selecteur
+    // dedie sur cet ecran, ajustable plus tard depuis la collection.
+    val condition = settings.condition
+
+    var finish by remember { mutableStateOf(settings.finish) }
+    var language by remember { mutableStateOf(settings.language) }
+
+    fun setFinish(value: String) {
+        finish = value
+        onSettingsChange(settings.copy(finish = value))
+    }
+
+    fun setLanguage(value: String) {
+        language = value
+        onSettingsChange(settings.copy(language = value))
+    }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -158,10 +191,10 @@ private fun ScanScreenContent(catalog: Catalog) {
         when (event) {
             is ScanEvent.Accept -> {
                 val (nextEntries, _) = addScan(
-                    entries, event.card, event.code, finish, language, DEFAULT_CONDITION,
+                    entries, event.card, event.code, finish, language, condition,
                     Instant.now().toString()
                 )
-                entries = nextEntries
+                onEntriesChange(nextEntries)
                 confirmAdditionFeedback()
             }
 
@@ -174,7 +207,7 @@ private fun ScanScreenContent(catalog: Catalog) {
     fun submitManualCode() {
         val code = manualCode.trim()
         if (code.isEmpty()) return
-        handleEvent(scanMachine.decide(code, finish, language, DEFAULT_CONDITION, entries))
+        handleEvent(scanMachine.decide(code, finish, language, condition, entries))
         manualCode = ""
     }
 
@@ -226,7 +259,7 @@ private fun ScanScreenContent(catalog: Catalog) {
                                             ScanUiState(
                                                 finish = finish,
                                                 language = language,
-                                                condition = DEFAULT_CONDITION,
+                                                condition = condition,
                                                 entries = entries,
                                                 paused = pendingEvent != null
                                             )
@@ -264,8 +297,8 @@ private fun ScanScreenContent(catalog: Catalog) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FinishToggle(finish = finish, onFinishChange = { finish = it })
-            LanguageToggle(language = language, onLanguageChange = { language = it })
+            FinishToggle(finish = finish, onFinishChange = { setFinish(it) })
+            LanguageToggle(language = language, onLanguageChange = { setLanguage(it) })
             Spacer(modifier = Modifier.weight(1f))
             Text(text = "${entries.sumOf { it.quantity }} carte(s)", color = Color.White)
             Spacer(modifier = Modifier.width(8.dp))
@@ -310,25 +343,25 @@ private fun ScanScreenContent(catalog: Catalog) {
                 scanMachine.reset()
             },
             onConfirmDuplicate = { index ->
-                entries = incrementEntry(entries, index)
+                onEntriesChange(incrementEntry(entries, index))
                 confirmAdditionFeedback()
                 pendingEvent = null
                 scanMachine.reset()
             },
             onChooseCard = { code, card ->
                 val (nextEntries, _) = addScan(
-                    entries, card, code, finish, language, DEFAULT_CONDITION, Instant.now().toString()
+                    entries, card, code, finish, language, condition, Instant.now().toString()
                 )
-                entries = nextEntries
+                onEntriesChange(nextEntries)
                 confirmAdditionFeedback()
                 pendingEvent = null
                 scanMachine.reset()
             },
             onKeepUnknown = { code ->
                 val (nextEntries, _) = addScan(
-                    entries, null, code, finish, language, DEFAULT_CONDITION, Instant.now().toString()
+                    entries, null, code, finish, language, condition, Instant.now().toString()
                 )
-                entries = nextEntries
+                onEntriesChange(nextEntries)
                 confirmAdditionFeedback()
                 pendingEvent = null
                 scanMachine.reset()
